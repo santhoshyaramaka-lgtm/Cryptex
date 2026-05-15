@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="PinButton" parent="Widget.MaterialComponents.Button.OutlinedButton">
+        <item name="android:layout_width">80dp</item>
+        <item name="android:layout_height">80dp</item>
+        <item name="android:layout_margin">4dp</item>
+        <item name="android:textColor">@color/white</item>
+        <item name="android:textSize">22sp</item>
+        <item name="strokeColor">@color/white</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="cornerRadius">40dp</item>
+    </style>
+
+    <!-- New clean PIN button — no outline, soft dark circle with ripple -->
+    <style name="PinKeyButton" parent="Widget.MaterialComponents.Button.TextButton">
+        <item name="android:layout_width">72dp</item>
+        <item name="android:layout_height">72dp</item>
+        <item name="android:layout_margin">10dp</item>
+        <item name="android:textColor">@color/white</item>
+        <item name="android:textSize">24sp</item>
+        <item name="android:textStyle">normal</item>
+        <item name="android:fontFamily">sans-serif-light</item>
+        <item name="android:background">@drawable/pin_btn_bg</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="rippleColor">@null</item>
+    </style>
+
+    <!-- Dialog style — ensures buttons are visible in both light and dark mode -->
+    <style name="CryptexAlertDialog" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog">
+        <item name="buttonBarPositiveButtonStyle">@style/CryptexDialogButton</item>
+        <item name="buttonBarNegativeButtonStyle">@style/CryptexDialogButton</item>
+        <item name="android:background">@color/card_bg</item>
+        <item name="android:textColor">@color/text_primary</item>
+    </style>
+
+    <style name="CryptexDialogButton" parent="Widget.MaterialComponents.Button.TextButton.Dialog">
+        <item name="android:textColor">@color/accent</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="Theme.MS" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorPrimaryDark">@color/primary_dark</item>
+        <item name="colorAccent">@color/accent</item>
+        <item name="android:windowBackground">@color/light_gray</item>
+        <item name="materialAlertDialogTheme">@style/CryptexAlertDialog</item>
+    </style>
+
+    <!-- Type picker tile card -->
+    <style name="TypeTile">
+        <item name="android:orientation">vertical</item>
+        <item name="android:gravity">center</item>
+        <item name="android:background">@drawable/tile_bg</item>
+        <item name="android:padding">8dp</item>
+    </style>
+
+    <!-- Emoji inside a type tile -->
+    <style name="TileEmoji">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">28sp</item>
+        <item name="android:gravity">center</item>
+    </style>
+
+    <!-- Label inside a type tile -->
+    <style name="TileLabel">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:gravity">center</item>
+        <item name="android:layout_marginTop">6dp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+</resources>

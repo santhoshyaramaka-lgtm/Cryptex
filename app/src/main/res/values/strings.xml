@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Cryptex</string>
+    <string name="app_version">Version 17.0</string>
+    <string name="enter_pin">Enter PIN</string>
+    <string name="set_pin">Set New PIN</string>
+    <string name="confirm_pin">Confirm PIN</string>
+    <string name="wrong_pin">Wrong PIN. Try again.</string>
+    <string name="pin_mismatch">PINs do not match. Try again.</string>
+    <string name="pin_set">PIN set successfully.</string>
+    <string name="save">Save</string>
+    <string name="delete">Delete</string>
+    <string name="cancel">Cancel</string>
+    <string name="copied">Copied!</string>
+    <string name="export_success">Backup saved successfully.</string>
+    <string name="export_fail">Export failed.</string>
+    <string name="import_success">Imported successfully.</string>
+    <string name="import_fail">Import failed. Check the file.</string>
+    <string name="import_wrong_password">Wrong password or corrupted backup file.</string>
+    <string name="import_invalid_file">Invalid file. Please select a valid Cryptex backup (.msb).</string>
+    <string name="backup_password_title">Backup Password</string>
+    <string name="backup_password_hint">Enter a strong password</string>
+    <string name="backup_password_confirm_hint">Confirm password</string>
+    <string name="backup_password_mismatch">Passwords do not match.</string>
+    <string name="backup_password_empty">Password cannot be empty.</string>
+    <string name="backup_encrypting">Encrypting…</string>
+    <string name="backup_decrypting">Decrypting…</string>
+    <string name="export_warning">⚠️ If you forget this password, your backup cannot be recovered.</string>
+    <string name="import_password_msg">Enter the password used to encrypt this backup.</string>
+    <string name="no_entries">No entries yet.\nTap + to add one.</string>
+    <string name="settings">Settings</string>
+    <string name="change_pin">Change PIN</string>
+    <string name="export_data">Export Backup</string>
+    <string name="import_data">Import Backup</string>
+    <string name="category_note">* Default categories cannot be deleted.</string>
+
+    <!-- V7: PIN attempt limit & lock -->
+    <string name="pin_attempts_left">%d attempt(s) remaining</string>
+    <string name="forgot_pin">Forgot PIN?</string>
+    <string name="pin_locked">🔒 Too many wrong attempts.\nUse Forgot PIN? to regain access.</string>
+    <string name="pin_mismatch_reset">PINs do not match. Try again.</string>
+
+    <!-- V7: Security question -->
+    <string name="security_question">Security Question</string>
+    <string name="security_question_not_set">Not set</string>
+    <string name="security_answer_prompt">Type your answer. You will need this to reset your PIN.</string>
+    <string name="security_answer_hint">Your answer…</string>
+    <string name="security_answer_empty">Answer cannot be empty.</string>
+
+    <!-- V7: Auto-lock -->
+    <string name="auto_lock">Auto-lock</string>
+    <string name="auto_lock_off">Off</string>
+    <string name="auto_lock_10s">10 seconds</string>
+    <string name="auto_lock_30s">30 seconds</string>
+    <string name="auto_lock_1m">1 minute</string>
+    <string name="auto_lock_5m">5 minutes</string>
+    <string name="auto_lock_seconds">%d sec</string>
+    <string name="auto_lock_minutes">%d min</string>
+
+    <!-- V7: Misc -->
+    <string name="next">Next</string>
+
+    <!-- Auto-backup -->
+    <string name="auto_backup">Auto-Backup</string>
+    <string name="auto_backup_desc">Automatically update backup on every save</string>
+
+    <!-- Backup: SAF export + Update Backup -->
+    <string name="update_backup">Update Backup</string>
+    <string name="last_backup">Last backup: %s</string>
+    <string name="backup_updated">Backup updated successfully.</string>
+    <string name="update_backup_no_export">No backup found. Please do a full Export first.</string>
+
+    <!-- V9: Attachment -->
+    <string name="attachment_label">Attachment</string>
+    <string name="no_file_attached">No file attached</string>
+    <string name="no_attachment">No attachment</string>
+    <string name="attach_btn">Attach</string>
+    <string name="change_btn">Change</string>
+    <string name="open_btn">Open</string>
+    <string name="remove_btn">Remove</string>
+    <string name="attachment_removed">Attachment removed.</string>
+    <string name="attachment_size_warning">Large file — backup size will increase.</string>
+    <string name="file_too_large">File too large. Maximum size is 5 MB.</string>
+    <string name="confirm_remove_attachment">Remove this attachment? This cannot be undone.</string>
+    <string name="no_app_to_open">No app found to open this file type.</string>
+    <string name="attachment_open_error">Could not open file.</string>
+
+    <!-- v17: Export as PDF -->
+    <string name="export_pdf">Export as PDF</string>
+    <string name="export_pdf_warning">⚠️ This PDF will contain ALL your passwords and secret data in plain text.\n\nSet a strong password below to protect the PDF file.</string>
+    <string name="pdf_password_title">Set PDF Password</string>
+    <string name="pdf_password_hint">PDF password</string>
+    <string name="pdf_password_confirm_hint">Confirm PDF password</string>
+    <string name="pdf_password_empty">Password cannot be empty.</string>
+    <string name="pdf_password_mismatch">Passwords do not match.</string>
+    <string name="generate_pdf">Generate PDF</string>
+    <string name="pdf_share">Share PDF</string>
+    <string name="pdf_save">Save to Storage</string>
+    <string name="pdf_generating">Generating PDF…</string>
+    <string name="pdf_success">PDF exported successfully.</string>
+    <string name="pdf_fail">PDF export failed.</string>
+    <string name="pdf_no_entries">No entries to export.</string>
+    <string name="pdf_filename">cryptex_vault.pdf</string>
+
+    <!-- v17: Biometric unlock -->
+    <string name="biometric_unlock">Biometric Unlock</string>
+    <string name="biometric_unlock_desc">Use fingerprint to unlock</string>
+    <string name="biometric_prompt_title">Cryptex</string>
+    <string name="biometric_prompt_subtitle">Touch sensor to unlock</string>
+    <string name="biometric_use_pin">Use PIN instead</string>
+    <string name="biometric_button">Use Fingerprint</string>
+    <string name="biometric_enabled_msg">Biometric unlock enabled.</string>
+    <string name="biometric_disabled_msg">Biometric unlock disabled.</string>
+    <string name="biometric_not_available">Biometric hardware not available or no fingerprints enrolled. Please set up fingerprint in device Settings first.</string>
+    <string name="biometric_verify_pin">Enter your PIN to enable biometric unlock.</string>
+</resources>

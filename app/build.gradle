@@ -1,0 +1,149 @@
+plugins {
+    id 'com.android.application'
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// BUILD CONFIGURATION NOTES  (Last verified: 2026-04-13, v17.0)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// ✅ minifyEnabled = false  → NEVER change this to true
+//    R8 minifier crashes on Windows when the project path contains spaces
+//    ("C:\Android Application\..."). R8 splits the path at the space and throws
+//    a NoSuchFileException on base.jar. Disabling minify bypasses R8 entirely.
+//    APK is still signed with the release keystore and fully installable.
+//
+// ✅ Auto-copy → after assembleRelease, APK is copied to Cryptex_Key/ folder
+//    with the name Cryptex-v{versionName}-release.apk
+//
+// ✅ To release a new version: bump versionCode and versionName in defaultConfig,
+//    then run:  .\gradlew.bat assembleRelease
+//    Output:   app\build\outputs\apk\release\Cryptex-v{X.X}-release.apk
+//              Cryptex_Key\Cryptex-v{X.X}-release.apk  (auto-copy)
+//
+// ════════════════════════════════════════════════════════════════════════════
+// KNOWN BUILD FAILURE CAUSES & FIXES  (learned from past failures)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// ❌ FAILURE: "Premature end of file" on any XML in packaged_res/
+//    CAUSE:   Corrupt cached build file (happens after interrupted builds)
+//    FIX:     Delete entire app\build folder, then rebuild from scratch
+//             → Remove-Item "app\build" -Recurse -Force
+//
+// ❌ FAILURE: "mergeDexRelease: classes.dex used by another process"
+//    CAUSE:   Previous Gradle build process still running / file lock
+//    FIX:     Stop all Gradle daemons first
+//             → .\gradlew.bat --stop
+//             Then rebuild normally
+//
+// ❌ FAILURE: "resource string/xyz not found" in AAPT
+//    CAUSE:   A layout XML references a string that doesn't exist in strings.xml
+//    FIX:     Add the missing string to app\src\main\res\values\strings.xml
+//             Also check for dead/unused layout files referencing missing resources
+//
+// ❌ FAILURE: "cannot find symbol" in Java compile
+//    CAUSE:   Dead/unused Activity files referencing methods that no longer exist
+//    FIX:     Delete the dead Activity .java file if it's not registered
+//             in AndroidManifest.xml and not referenced anywhere
+//
+// ❌ FAILURE: R8 "NoSuchFileException: base.jar"
+//    CAUSE:   minifyEnabled=true + spaces in project path
+//    FIX:     Keep minifyEnabled=false (see top note)
+//
+// ❌ FAILURE: App crashes immediately after PIN (ClassCastException)
+//    CAUSE:   Java field declared as wrong view type (e.g. LinearLayout)
+//             but XML has it as a different type (e.g. ScrollView)
+//    FIX:     Match the Java field type exactly to the XML view type
+//             e.g. private ScrollView tileGridLayout → <ScrollView> in XML
+//
+// ════════════════════════════════════════════════════════════════════════════
+// SAFE BUILD COMMAND (always use this sequence):
+//    .\gradlew.bat --stop
+//    Remove-Item "app\build" -Recurse -Force   ← only if previous build failed
+//    .\gradlew.bat assembleRelease
+// ════════════════════════════════════════════════════════════════════════════
+
+android {
+    namespace 'com.cryptex.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.cryptex.app"
+        minSdk 23
+        targetSdk 34
+        versionCode 17
+        versionName "17.0"
+    }
+
+    signingConfigs {
+        release {
+            storeFile file("../Cryptex_Key/cryptex_release.jks")
+            storePassword "Santhosh@7"
+            keyAlias "cryptex_key"
+            keyPassword "Santhosh@7"
+        }
+    }
+
+    buildTypes {
+        release {
+            // ⚠️ IMPORTANT: minifyEnabled must stay FALSE
+            // R8 minifier crashes on Windows when the project path contains spaces
+            // e.g. "C:\Android Application\..." — R8 splits the path at the space
+            // and fails to read base.jar with a NoSuchFileException.
+            // Disabling minify bypasses R8 entirely. APK is still signed & working.
+            // DO NOT set minifyEnabled true unless the project is moved to a path with no spaces.
+            minifyEnabled false
+            signingConfig signingConfigs.release
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            if (variant.buildType.name == "release") {
+                outputFileName = "Cryptex-v${variant.versionName}-release.apk"
+            }
+        }
+    }
+}
+
+// Auto-copy release APK to Cryptex_Key folder after build
+tasks.whenTaskAdded { task ->
+    if (task.name == "assembleRelease") {
+        task.doLast {
+            def apkDir  = file("${buildDir}/outputs/apk/release")
+            def destDir = file("${rootDir}/Cryptex_Key")
+            destDir.mkdirs()
+            apkDir.listFiles().each { f ->
+                if (f.name.endsWith(".apk")) {
+                    copy {
+                        from f
+                        into destDir
+                    }
+                    println "✅ APK copied to Cryptex_Key/${f.name}"
+                }
+            }
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.security:security-crypto:1.1.0-alpha06'
+    implementation 'androidx.recyclerview:recyclerview:1.3.2'
+    implementation 'androidx.activity:activity:1.8.2'
+
+    // v17: Password-protected PDF export
+    implementation 'com.tom-roush:pdfbox-android:2.0.27.0'
+
+    // v17: Biometric unlock (fingerprint / face)
+    implementation 'androidx.biometric:biometric:1.1.0'
+}

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark mode — Charcoal Gray (Option A) -->
+    <!-- Base background: dark charcoal, not pure black -->
+    <color name="primary">#1C1C1E</color>
+    <color name="primary_dark">#141416</color>
+    <color name="accent">#F2F2F7</color>
+    <color name="white">#F2F2F7</color>
+    <!-- Page/screen background -->
+    <color name="light_gray">#1C1C1E</color>
+    <!-- Text -->
+    <color name="text_primary">#F2F2F7</color>
+    <color name="text_secondary">#AEAEB2</color>
+    <color name="hint_color">#8E8E93</color>
+    <color name="input_text">#F2F2F7</color>
+    <!-- Cards and surfaces sit one level above background -->
+    <color name="card_bg">#2C2C2E</color>
+    <!-- Input field backgrounds -->
+    <color name="divider">#3A3A3C</color>
+    <!-- Entry count label -->
+    <color name="entry_count">#8E8E93</color>
+    <!-- Buttons: keep high contrast with a light button on dark bg -->
+    <color name="btn_bg">#F2F2F7</color>
+    <color name="btn_text">#1C1C1E</color>
+    <color name="selection_highlight">#3A3A3C</color>
+    <color name="input_bg_color">#2C2C2E</color>
+    <color name="input_border_color">#636366</color>
+</resources>

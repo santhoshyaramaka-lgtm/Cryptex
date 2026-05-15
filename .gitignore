@@ -1,0 +1,27 @@
+# Build outputs
+build/
+app/build/
+out/
+
+# Gradle cache
+.gradle/
+
+
+# Android Studio / IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Intermediate/generated files
+*.ap_
+*.aar
+*.class
+*.dex
+
+# OS files
+.DS_Store
+Thumbs.db

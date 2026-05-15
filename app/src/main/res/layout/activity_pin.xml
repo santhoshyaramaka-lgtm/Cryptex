@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Root is FrameLayout so layoutLocked sits on TOP of the PIN UI
+    as a true full-screen cover, not pushed below its siblings.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/pin_bg">
+
+    <!-- ── Normal PIN UI ──────────────────────────────────────────────── -->
+    <LinearLayout
+        android:id="@+id/layoutPinUi"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:paddingLeft="24dp"
+        android:paddingRight="24dp"
+        android:paddingBottom="32dp">
+
+        <!-- Top zone: dots + attempts, centred in the upper half of the screen -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <!-- Title — changes based on mode: Set PIN / Confirm PIN / Enter PIN -->
+            <TextView
+                android:id="@+id/tvPinTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginBottom="32dp"
+                android:textColor="#FFFFFF"
+                android:textSize="22sp"
+                android:letterSpacing="0.05"
+                android:text="@string/enter_pin"/>
+
+            <!-- PIN dots -->
+            <LinearLayout
+                android:id="@+id/layoutDots"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginBottom="16dp">
+
+                <View android:id="@+id/dot1"
+                    android:layout_width="22dp" android:layout_height="22dp"
+                    android:layout_margin="14dp"
+                    android:background="@drawable/pin_dot_empty"/>
+                <View android:id="@+id/dot2"
+                    android:layout_width="22dp" android:layout_height="22dp"
+                    android:layout_margin="14dp"
+                    android:background="@drawable/pin_dot_empty"/>
+                <View android:id="@+id/dot3"
+                    android:layout_width="22dp" android:layout_height="22dp"
+                    android:layout_margin="14dp"
+                    android:background="@drawable/pin_dot_empty"/>
+                <View android:id="@+id/dot4"
+                    android:layout_width="22dp" android:layout_height="22dp"
+                    android:layout_margin="14dp"
+                    android:background="@drawable/pin_dot_empty"/>
+
+            </LinearLayout>
+
+            <!-- Attempts remaining — amber, shown only after 1st wrong attempt -->
+            <TextView
+                android:id="@+id/tvAttempts"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:textColor="@color/pin_attempts_color"
+                android:textSize="13sp"
+                android:letterSpacing="0.05"
+                android:visibility="gone"/>
+
+        </LinearLayout>
+
+        <!-- Number pad — pinned to the bottom -->
+        <GridLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:columnCount="3"
+            android:rowCount="4">
+
+            <Button android:id="@+id/btn1" style="@style/PinKeyButton" android:text="1"/>
+            <Button android:id="@+id/btn2" style="@style/PinKeyButton" android:text="2"/>
+            <Button android:id="@+id/btn3" style="@style/PinKeyButton" android:text="3"/>
+            <Button android:id="@+id/btn4" style="@style/PinKeyButton" android:text="4"/>
+            <Button android:id="@+id/btn5" style="@style/PinKeyButton" android:text="5"/>
+            <Button android:id="@+id/btn6" style="@style/PinKeyButton" android:text="6"/>
+            <Button android:id="@+id/btn7" style="@style/PinKeyButton" android:text="7"/>
+            <Button android:id="@+id/btn8" style="@style/PinKeyButton" android:text="8"/>
+            <Button android:id="@+id/btn9" style="@style/PinKeyButton" android:text="9"/>
+
+            <!-- Empty placeholder left of 0 -->
+            <Space android:layout_width="72dp" android:layout_height="72dp"
+                android:layout_margin="10dp"/>
+
+            <Button android:id="@+id/btn0" style="@style/PinKeyButton" android:text="0"/>
+
+            <!-- Backspace icon — long-press reveals Forgot PIN -->
+            <Button
+                android:id="@+id/btnBack"
+                style="@style/PinKeyButton"
+                android:text=""
+                android:drawableLeft="@drawable/ic_backspace"
+                android:drawablePadding="0dp"/>
+
+        </GridLayout>
+
+        <!-- Forgot PIN — hidden; revealed by long-pressing the backspace key -->
+        <Button
+            android:id="@+id/btnForgotPin"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:text="@string/forgot_pin"
+            android:textColor="#80FFFFFF"
+            android:textSize="13sp"
+            android:letterSpacing="0.03"
+            android:layout_marginTop="4dp"
+            android:visibility="gone"/>
+
+        <!-- v17: Biometric unlock button — shown only when biometric is enabled -->
+        <Button
+            android:id="@+id/btnBiometric"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:text="@string/biometric_button"
+            android:textColor="#CCFFFFFF"
+            android:textSize="14sp"
+            android:letterSpacing="0.03"
+            android:drawableStart="@drawable/ic_fingerprint"
+            android:drawablePadding="8dp"
+            android:layout_marginTop="8dp"
+            android:visibility="gone"/>
+
+    </LinearLayout>
+
+    <!-- ── Lock overlay — shown when 3 wrong attempts reached ─────────── -->
+    <LinearLayout
+        android:id="@+id/layoutLocked"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="40dp"
+        android:background="@color/pin_bg"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🔒"
+            android:textSize="64sp"
+            android:gravity="center"
+            android:layout_marginBottom="40dp"/>
+
+        <Button
+            android:id="@+id/btnForgotPinLocked"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:text="@string/forgot_pin"
+            android:textColor="#80FFFFFF"
+            android:textSize="15sp"
+            android:background="@null"/>
+
+    </LinearLayout>
+
+</FrameLayout>

@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@color/card_bg"
+    android:paddingBottom="24dp">
+
+    <!-- Handle bar -->
+    <View
+        android:layout_width="40dp"
+        android:layout_height="4dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="12dp"
+        android:layout_marginBottom="4dp"
+        android:background="#CCCCCC"/>
+
+    <!-- Title -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Choose Entry Type"
+        android:textColor="@color/text_primary"
+        android:textSize="17sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:paddingTop="8dp"
+        android:paddingBottom="16dp"/>
+
+    <!-- Row 1: Website / App  +  Card -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:layout_marginBottom="12dp">
+
+        <LinearLayout
+            android:id="@+id/tileWebsite"
+            style="@style/TypeTile"
+            android:layout_width="0dp"
+            android:layout_height="90dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="8dp">
+            <TextView android:id="@+id/tvWebsiteEmoji" style="@style/TileEmoji" android:text="🌐"/>
+            <TextView android:id="@+id/tvWebsiteLabel" style="@style/TileLabel" android:text="Website / App"/>
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/tileCard"
+            style="@style/TypeTile"
+            android:layout_width="0dp"
+            android:layout_height="90dp"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp">
+            <TextView android:id="@+id/tvCardEmoji" style="@style/TileEmoji" android:text="💳"/>
+            <TextView android:id="@+id/tvCardLabel" style="@style/TileLabel" android:text="Card"/>
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- Row 2: Bank Details  +  Personal Info -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:layout_marginBottom="12dp">
+
+        <LinearLayout
+            android:id="@+id/tileBank"
+            style="@style/TypeTile"
+            android:layout_width="0dp"
+            android:layout_height="90dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="8dp">
+            <TextView android:id="@+id/tvBankEmoji" style="@style/TileEmoji" android:text="🏦"/>
+            <TextView android:id="@+id/tvBankLabel" style="@style/TileLabel" android:text="Bank Details"/>
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/tilePersonal"
+            style="@style/TypeTile"
+            android:layout_width="0dp"
+            android:layout_height="90dp"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp">
+            <TextView android:id="@+id/tvPersonalEmoji" style="@style/TileEmoji" android:text="👤"/>
+            <TextView android:id="@+id/tvPersonalLabel" style="@style/TileLabel" android:text="Personal Info"/>
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- Row 3: PIN / Code  +  Note -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp">
+
+        <LinearLayout
+            android:id="@+id/tilePin"
+            style="@style/TypeTile"
+            android:layout_width="0dp"
+            android:layout_height="90dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="8dp">
+            <TextView android:id="@+id/tvPinEmoji" style="@style/TileEmoji" android:text="🔐"/>
+            <TextView android:id="@+id/tvPinLabel" style="@style/TileLabel" android:text="PIN / Code"/>
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/tileNote"
+            style="@style/TypeTile"
+            android:layout_width="0dp"
+            android:layout_height="90dp"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp">
+            <TextView android:id="@+id/tvNoteEmoji" style="@style/TileEmoji" android:text="📝"/>
+            <TextView android:id="@+id/tvNoteLabel" style="@style/TileLabel" android:text="Note"/>
+        </LinearLayout>
+
+    </LinearLayout>
+
+</LinearLayout>

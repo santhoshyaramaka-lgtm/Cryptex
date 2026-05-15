@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    FileProvider paths — v9
+    Defines which directories FileProvider is allowed to share files from.
+    cacheDir = app's private cache folder (getCacheDir())
+    Used when opening attachments with external apps via ACTION_VIEW intent.
+-->
+<paths>
+    <cache-path
+        name="attachment_cache"
+        path="attachments/" />
+    <!-- v17: PDF export share path -->
+    <cache-path
+        name="pdf_export"
+        path="pdf_export/" />
+</paths>

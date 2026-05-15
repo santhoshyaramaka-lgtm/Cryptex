@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="1024"
+    android:viewportHeight="1024">
+
+    <!--
+        Vault Door icon — Option 4
+        ─────────────────────────────────────────────────────
+        Elements:
+          1. Outer vault ring    — dark steel blue with teal stroke
+          2. Vault door face     — steel blue radial gradient
+          3. Inner ring          — teal accent ring
+          4. Centre lock wheel   — dark circle with teal highlight
+          5. Bolt circles x8    — teal dots around the ring
+          6. Handle bar          — white horizontal bar
+    -->
+
+    <!-- ── 1. OUTER VAULT RING ── -->
+    <path
+        android:fillColor="#37474F"
+        android:pathData="M512,80 m-432,0 a432,432 0 1,0 864,0 a432,432 0 1,0 -864,0"/>
+    <!-- Outer teal stroke ring -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#00BCD4"
+        android:strokeWidth="28"
+        android:pathData="M512,80 m-432,0 a432,432 0 1,0 864,0 a432,432 0 1,0 -864,0"/>
+
+    <!-- ── 2. VAULT DOOR FACE — radial gradient steel blue ── -->
+    <path
+        android:pathData="M512,130 m-382,0 a382,382 0 1,0 764,0 a382,382 0 1,0 -764,0">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="512"
+                android:centerY="512"
+                android:gradientRadius="382">
+                <item android:offset="0"   android:color="#546E7A"/>
+                <item android:offset="0.6" android:color="#37474F"/>
+                <item android:offset="1"   android:color="#263238"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- ── 3. INNER ACCENT RING ── -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#00ACC1"
+        android:strokeWidth="20"
+        android:pathData="M512,200 m-312,0 a312,312 0 1,0 624,0 a312,312 0 1,0 -624,0"/>
+
+    <!-- ── 4. CENTRE LOCK WHEEL ── -->
+    <path
+        android:fillColor="#263238"
+        android:pathData="M512,370 m-142,0 a142,142 0 1,0 284,0 a142,142 0 1,0 -284,0"/>
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#00E5FF"
+        android:strokeWidth="16"
+        android:pathData="M512,370 m-142,0 a142,142 0 1,0 284,0 a142,142 0 1,0 -284,0"/>
+    <!-- Lock keyhole — body -->
+    <path
+        android:fillColor="#00BCD4"
+        android:pathData="M512,430 m-30,0 a30,30 0 1,0 60,0 a30,30 0 1,0 -60,0"/>
+    <!-- Lock keyhole — slot -->
+    <path
+        android:fillColor="#00BCD4"
+        android:pathData="M496,460 L528,460 L522,530 L502,530 Z"/>
+
+    <!-- ── 5. BOLT CIRCLES x8 around inner ring ── -->
+    <!-- Top -->
+    <path android:fillColor="#00BCD4"
+        android:pathData="M512,210 m-22,0 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0"/>
+    <!-- Bottom -->
+    <path android:fillColor="#00BCD4"
+        android:pathData="M512,790 m-22,0 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0"/>
+    <!-- Left -->
+    <path android:fillColor="#00BCD4"
+        android:pathData="M200,500 m-22,0 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0"/>
+    <!-- Right -->
+    <path android:fillColor="#00BCD4"
+        android:pathData="M824,500 m-22,0 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0"/>
+    <!-- Top-left -->
+    <path android:fillColor="#546E7A"
+        android:strokeColor="#00BCD4"
+        android:strokeWidth="8"
+        android:pathData="M290,290 m-22,0 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0"/>
+    <!-- Top-right -->
+    <path android:fillColor="#546E7A"
+        android:strokeColor="#00BCD4"
+        android:strokeWidth="8"
+        android:pathData="M734,290 m-22,0 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0"/>
+    <!-- Bottom-left -->
+    <path android:fillColor="#546E7A"
+        android:strokeColor="#00BCD4"
+        android:strokeWidth="8"
+        android:pathData="M290,720 m-22,0 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0"/>
+    <!-- Bottom-right -->
+    <path android:fillColor="#546E7A"
+        android:strokeColor="#00BCD4"
+        android:strokeWidth="8"
+        android:pathData="M734,720 m-22,0 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0"/>
+
+    <!-- ── 6. HANDLE BAR — white horizontal ── -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#ECEFF1"
+        android:strokeWidth="28"
+        android:strokeLineCap="round"
+        android:pathData="M420,620 L604,620"/>
+
+</vector>
