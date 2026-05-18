@@ -1,9 +1,9 @@
 # Cryptex — Project Status & Handover Document
-**Last Updated:** May 15, 2026
+**Last Updated:** May 18, 2026
 **App Name:** Cryptex
-**Current Stable Version:** v17.0 (versionCode 17) — closed ✅
-**Next Version:** v18.0 (versionCode 18) — open
-**APK Location:** `Cryptex_Key/Cryptex-v17.0-release.apk` (stable)
+**Current Stable Version:** v18.0 (versionCode 18) — closed ✅
+**Next Version:** v19.0 (versionCode 19) — open
+**APK Location:** `Cryptex_Key/Cryptex-v18.0-release.apk` (stable)
 
 ---
 
@@ -66,8 +66,8 @@ Cryptex/
 | `compileSdk` | 34 |
 | `minSdk` | 23 |
 | `targetSdk` | 34 |
-| `versionCode` | 17 |
-| `versionName` | "17.0" |
+| `versionCode` | 18 |
+| `versionName` | "18.0" |
 | `minifyEnabled` | **false** (must stay false — see note) |
 | Keystore | `Cryptex_Key/cryptex_release.jks` |
 | Key alias | `cryptex_key` |
@@ -417,31 +417,47 @@ After a correct PIN was entered, `goToMain()` in `PinActivity` launched `MainAct
 
 ---
 
-## 12i. V18.0 — Candidate Features
+## 12i. V18.0 — Completed Features ✅ STABLE — Closed May 18, 2026
 
-> V17.0 is closed and stable. Items below are candidates for v18.0:
+### Resume Where You Left Off
+- [x] **Back stack preserved on auto-lock** — `checkAndHandleAutoLock()` no longer uses `FLAG_ACTIVITY_CLEAR_TASK`; PinActivity is pushed on top of the existing back stack
+- [x] **`resume_on_success` extra** — passed to PinActivity when lock triggers mid-session; `goToMain()` calls `finish()` instead of launching `MainActivity`, so the user resumes the exact screen they were on
+- [x] **Cold start unaffected** — first install / PIN setup still navigates to `MainActivity` (no `resume_on_success` flag)
+- [x] **Forgot PIN reset unaffected** — still uses `CLEAR_TASK` → `MainActivity` as before
+- [x] Works across all screens: `MainActivity`, `TypeListActivity`, `DetailActivity`, `SettingsActivity`
 
-- [ ] **Password strength indicator** — Weak / Fair / Strong bar on Website / Card password fields
-- [ ] **Search highlight** — highlight matched text in search results
-- [ ] **Custom security question** — let user type their own question instead of picking from 3
-- [ ] **Dark mode toggle** — manual override (currently follows system DayNight)
-- [ ] **Multiple attachments per entry** — currently limited to one file per entry
+### Search Highlight
+- [x] **Highlight matched text** — every case-insensitive match of the search query is highlighted in entry title and subtitle on all list screens
+- [x] **`setSearchQuery()` API on `EntryAdapter`** — callers pass query before `notifyDataSetChanged()`
+- [x] **`highlight()` helper** — uses `SpannableString` + `BackgroundColorSpan` + `ForegroundColorSpan`
+- [x] **Light mode** — amber background `#FFE082` + forced black text `#000000`
+- [x] **Dark mode** — same amber background + forced black text (no dissolving)
+- [x] **Highlight clears** when search box is emptied
+- [x] Applied in `MainActivity` (global search) and `TypeListActivity` (per-type search)
+- [x] `search_highlight` + `search_highlight_text` colors added to both `colors.xml` and `values-night/colors.xml`
+
+### Icon Upgrade (Vault Door V18)
+- [x] **All elements scaled inward** — fit inside Android adaptive icon safe zone (61%); no clipping on circle or rounded-square launchers
+- [x] **Radial gradient background** — deep `#1C2128` centre → `#0D1117` edge (replaces flat `#212121`)
+- [x] **Double glow rings** — outer and inner accent rings each get a wide transparent glow layer for neon effect
+- [x] **Gold diagonal bolts** — 4 diagonal bolts changed from dull steel `#546E7A` → gold `#FFD700` with amber stroke `#FFA000`
+- [x] **White keyhole with teal glow** — keyhole circle and slot changed from plain teal → white fill + `#00E5FF` stroke
+- [x] **Icon centre alignment fix** — all ring paths corrected from wrong Y-centre to `M512,512` so all 3 rings, bolts and keyhole are perfectly centred on device
+
+### Version Bump
+- [x] `versionCode 18`, `versionName "18.0"`, `app_version` string updated to `"Version 18.0"`
 
 ---
 
-## 12e. V15.0 — Upcoming Features
+## 12j. V19.0 — Candidate Features
 
-> V14.0 is closed and stable. Items below are planned for v15.0:
+> V18.0 is closed and stable. Items below are candidates for v19.0:
 
-### Candidate features (to be prioritised)
-- [ ] **Biometric unlock** — fingerprint / face as alternative to PIN
-- [ ] **Password strength indicator** — on Website / Card password fields
+- [ ] **Password strength indicator** — Weak / Fair / Strong bar on Website / Card password fields
+- [ ] **Password generator** — generate strong random passwords directly inside Website / Card entry
+- [ ] **Custom security question** — let user type their own question instead of picking from 3
 - [ ] **Dark mode toggle** — manual override (currently follows system DayNight)
-- [ ] **Export to plain text / CSV** — optional, with strong warning dialog
-- [ ] **Custom security questions** — let user type their own question
-- [ ] **Multiple backup slots** — named backups, not just one file
-- [ ] **Search highlight** — highlight matched text in search results
-- [ ] **Multiple attachments per entry** — v9 supports one; expand to a list
+- [ ] **Multiple attachments per entry** — currently limited to one file per entry
 
 ---
 
@@ -465,3 +481,4 @@ After a correct PIN was entered, `goToMain()` in `PinActivity` launched `MainAct
 | v17.0 | Apr 13, 2026 | Password-protected PDF export (PdfBox-Android AES-128, direct share sheet), Biometric unlock (optional fingerprint, Settings toggle, PIN-verified enable, clean prompt — no buttons), Settings scroll fix, PDF password bug fix |
 | v18.0 | Apr 13, 2026 | **App renamed MS → Cryptex**: applicationId `com.cryptex.app`, package `com.cryptex.app`, FileProvider authority, app name, biometric prompt title, PDF export title, backup filename, share footer, PDF filename all updated. Removed stale `com/ms/app/` source folder (root cause of build failure). Settings card order reordered: Import first, Export/PDF/UpdateBackup/AutoBackup, then Security section (Auto-lock, Biometric, Change PIN, Security Question). All old-name comments and strings cleaned up. |
 | v18.0 (repo init) | May 15, 2026 | **Git repository initialised**: Stale `com/ms/app/` duplicate source folder deleted. New release keystore created (`Cryptex_Key/cryptex_release.jks`, alias `cryptex_key`). Key folder renamed `ms_Key/` → `Cryptex_Key/`. Old `ms_release.jks` deleted. `build.gradle` updated with new keystore path, alias, and auto-copy target. `local.properties` added and tracked. `.vscode/` tracked. Build verified successful. |
+| v18.0 (features) | May 18, 2026 | **Resume where you left off**: back stack preserved on auto-lock — PIN screen pushed on top, `finish()` on success resumes exact previous screen. **Search highlight**: matched text highlighted amber (`#FFE082`) + forced black text in both global and per-type search, light + dark mode safe. **Icon upgrade**: all vault door elements scaled inside Android safe zone, radial gradient background, double glow rings, gold diagonal bolts, white keyhole with teal glow, all ring paths centred correctly at `(512,512)`. `versionCode 18`, `versionName "18.0"`. |

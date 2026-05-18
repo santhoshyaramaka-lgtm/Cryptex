@@ -170,6 +170,7 @@ public class MainActivity extends BaseActivity {
                 ? "No results for \"" + query + "\""
                 : count + " result" + (count == 1 ? "" : "s") + " for \"" + query + "\"");
 
+        searchAdapter.setSearchQuery(query);
         searchAdapter.notifyDataSetChanged();
 
         // Switch visibility: hide tiles, show results
@@ -179,6 +180,7 @@ public class MainActivity extends BaseActivity {
 
     private void showTileGrid() {
         searchResults.clear();
+        searchAdapter.setSearchQuery("");
         searchAdapter.notifyDataSetChanged();
         tileGridLayout.setVisibility(View.VISIBLE);
         searchResultsLayout.setVisibility(View.GONE);

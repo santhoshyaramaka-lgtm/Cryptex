@@ -61,7 +61,9 @@ public abstract class BaseActivity extends AppCompatActivity {
             baseStorage.setForcedLock(false);
             baseStorage.setBackgroundTimestamp(0);
             Intent intent = new Intent(this, PinActivity.class);
-            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+            // Do NOT clear the task — keep the back stack so that after a
+            // successful PIN the user resumes exactly where they left off.
+            intent.putExtra("resume_on_success", true);
             startActivity(intent);
             return true;
         }

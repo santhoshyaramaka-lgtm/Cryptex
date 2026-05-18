@@ -1,5 +1,9 @@
 package com.cryptex.app;
 
+import android.text.Spannable;
+import android.text.SpannableString;
+import android.text.style.BackgroundColorSpan;
+import android.text.style.ForegroundColorSpan;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -36,6 +40,9 @@ public class EntryAdapter extends RecyclerView.Adapter<EntryAdapter.ViewHolder> 
     private boolean selectionMode = false;
     private final Set<String> selectedIds = new HashSet<>();
 
+    // Search highlight query — empty string means no highlight
+    private String searchQuery = "";
+
     public EntryAdapter(List<Entry> entries, OnItemClickListener listener,
                         StorageHelper storage, List<Entry> allEntries,
                         Runnable onFavouriteChanged) {
@@ -71,6 +78,37 @@ public class EntryAdapter extends RecyclerView.Adapter<EntryAdapter.ViewHolder> 
         notifyItemChanged(position);
     }
 
+    // ── Search highlight API ──────────────────────────────────────────────────
+
+    /** Set the query string whose occurrences should be highlighted in list items. */
+    public void setSearchQuery(String query) {
+        this.searchQuery = (query == null) ? "" : query.trim();
+    }
+
+    /**
+     * Returns a SpannableString with every case-insensitive occurrence of
+     * {@code query} highlighted using the app's search_highlight color.
+     * Returns plain text if query is empty or not found.
+     */
+    private CharSequence highlight(android.content.Context ctx, String text, String query) {
+        if (query.isEmpty() || text == null || text.isEmpty()) return text == null ? "" : text;
+        SpannableString span = new SpannableString(text);
+        String lowerText  = text.toLowerCase();
+        String lowerQuery = query.toLowerCase();
+        int bgColor   = ContextCompat.getColor(ctx, R.color.search_highlight);
+        int textColor = ContextCompat.getColor(ctx, R.color.search_highlight_text);
+        int start = 0;
+        while ((start = lowerText.indexOf(lowerQuery, start)) != -1) {
+            int end = start + lowerQuery.length();
+            span.setSpan(new BackgroundColorSpan(bgColor),
+                    start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+            span.setSpan(new ForegroundColorSpan(textColor),
+                    start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+            start = end;
+        }
+        return span;
+    }
+
     // ── Adapter ───────────────────────────────────────────────────────────────
 
     @NonNull
@@ -91,10 +129,12 @@ public class EntryAdapter extends RecyclerView.Adapter<EntryAdapter.ViewHolder> 
         holder.tvIcon.setText(EntryType.getEmoji(type));
 
         // ── Title (always field1) ─────────────────────────────────────────────
-        holder.tvTitle.setText(entry.getDisplayTitle());
+        holder.tvTitle.setText(highlight(holder.itemView.getContext(),
+                entry.getDisplayTitle(), searchQuery));
 
         // ── Smart subtitle per type ───────────────────────────────────────────
-        holder.tvSubtitle.setText(EntryType.getSubtitle(type, entry));
+        holder.tvSubtitle.setText(highlight(holder.itemView.getContext(),
+                EntryType.getSubtitle(type, entry), searchQuery));
 
         // ── Timestamp ─────────────────────────────────────────────────────────
         long updatedAt = entry.getUpdatedAt();

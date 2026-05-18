@@ -313,8 +313,18 @@ public class PinActivity extends BaseActivity {
     private void goToMain() {
         storage.setForcedLock(false);
         storage.setBackgroundTimestamp(0);
-        startActivity(new Intent(this, MainActivity.class));
-        finish();
+
+        boolean resumeOnSuccess = getIntent().getBooleanExtra("resume_on_success", false);
+        if (resumeOnSuccess) {
+            // Auto-lock scenario: PIN screen was pushed on top of the existing
+            // back stack. Simply finishing here brings the user back to exactly
+            // the screen they were on before the lock triggered.
+            finish();
+        } else {
+            // First launch / PIN setup: no back stack exists — go to MainActivity.
+            startActivity(new Intent(this, MainActivity.class));
+            finish();
+        }
     }
 
     private void resetInput() {
