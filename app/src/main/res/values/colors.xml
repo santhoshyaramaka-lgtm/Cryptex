@@ -16,6 +16,8 @@
     <color name="btn_bg">#000000</color>
     <color name="btn_text">#FFFFFF</color>
     <color name="selection_highlight">#E0E0E0</color>
+    <color name="search_highlight">#FFE082</color>
+    <color name="search_highlight_text">#000000</color>
     <color name="input_bg_color">#FFFFFF</color>
     <color name="input_border_color">#757575</color>
 

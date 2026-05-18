@@ -208,6 +208,7 @@ public class TypeListActivity extends BaseActivity {
         int count = filteredEntries.size();
         tvEntryCount.setText(count == 1 ? "1 entry" : count + " entries");
 
+        adapter.setSearchQuery(searchQuery);
         adapter.notifyDataSetChanged();
         updateEmptyState();
     }

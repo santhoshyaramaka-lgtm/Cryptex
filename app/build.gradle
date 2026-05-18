@@ -3,7 +3,7 @@ plugins {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// BUILD CONFIGURATION NOTES  (Last verified: 2026-04-13, v17.0)
+// BUILD CONFIGURATION NOTES  (Last verified: 2026-05-18, v18.0)
 // ════════════════════════════════════════════════════════════════════════════
 //
 // ✅ minifyEnabled = false  → NEVER change this to true
@@ -70,8 +70,8 @@ android {
         applicationId "com.cryptex.app"
         minSdk 23
         targetSdk 34
-        versionCode 17
-        versionName "17.0"
+        versionCode 18
+        versionName "18.0"
     }
 
     signingConfigs {
