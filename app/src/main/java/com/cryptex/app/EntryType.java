@@ -1,11 +1,12 @@
 package com.cryptex.app;
 
 /**
- * Defines all 6 entry types, their field labels,
+ * Defines all 7 entry types, their field labels,
  * which fields are secret (masked), and which are multiline.
  *
  * Field slots: field1 – field7
- * field7 is always "Notes" (multiline, 5 lines) for every type.
+ * field7 is always "Notes" (multiline, 5 lines) for all non-checklist types.
+ * v20: Added CHECKLIST as the 7th type.
  */
 public class EntryType {
 
@@ -16,6 +17,7 @@ public class EntryType {
     public static final String PERSONAL = "personal";
     public static final String PIN      = "pin";
     public static final String NOTE     = "note";
+    public static final String CHECKLIST = "checklist"; // v20
 
     // ── Display Names ─────────────────────────────────────────────────────────
     public static String getDisplayName(String type) {
@@ -26,6 +28,7 @@ public class EntryType {
             case PERSONAL: return "Personal Info";
             case PIN:      return "PIN / Code";
             case NOTE:     return "Note";
+            case CHECKLIST: return "Checklist"; // v20
             default:       return "Unknown";
         }
     }
@@ -39,6 +42,7 @@ public class EntryType {
             case PERSONAL: return "👤";
             case PIN:      return "🔐";
             case NOTE:     return "📝";
+            case CHECKLIST: return "☑️"; // v20
             default:       return "📄";
         }
     }
@@ -108,6 +112,12 @@ public class EntryType {
                         "",                 // field6 — unused
                         "Notes"             // field7
                 };
+            case CHECKLIST: // v20 — only title; items stored separately
+                return new String[]{
+                        "Title",            // field1
+                        "",                 // field2–7 unused
+                        "", "", "", "", ""
+                };
             default:
                 return new String[]{"Title", "", "", "", "", "", "Notes"};
         }
@@ -130,6 +140,8 @@ public class EntryType {
             case PIN:
                 return new boolean[]{false, true,  false, false, false, false, false};
             case NOTE:
+                return new boolean[]{false, false, false, false, false, false, false};
+            case CHECKLIST: // v20 — no secret fields
                 return new boolean[]{false, false, false, false, false, false, false};
             default:
                 return new boolean[]{false, false, false, false, false, false, false};
@@ -163,6 +175,15 @@ public class EntryType {
                     return firstLine.length() > 40 ? firstLine.substring(0, 40) + "…" : firstLine;
                 }
                 return "Note";
+            case CHECKLIST: { // v20
+                int total   = e.getChecklistItems().size();
+                int checked = 0;
+                for (ChecklistItem item : e.getChecklistItems()) {
+                    if (item.isChecked()) checked++;
+                }
+                if (total == 0) return "No items";
+                return checked + " of " + total + " done";
+            }
             default:
                 return "";
         }
@@ -184,6 +205,6 @@ public class EntryType {
 
     // ── All types (for tab/picker lists) ──────────────────────────────────────
     public static final String[] ALL_TYPES = {
-            WEBSITE, CARD, BANK, PERSONAL, PIN, NOTE
+            WEBSITE, CARD, BANK, PERSONAL, PIN, NOTE, CHECKLIST
     };
 }

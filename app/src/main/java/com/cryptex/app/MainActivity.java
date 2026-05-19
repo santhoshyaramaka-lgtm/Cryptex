@@ -121,7 +121,8 @@ public class MainActivity extends BaseActivity {
         for (String type : EntryType.ALL_TYPES) counts.put(type, 0);
         for (Entry e : allEntries) {
             Integer c = counts.get(e.getType());
-            if (c != null) counts.put(e.getType(), c + 1);
+            // v19: exclude archived entries from tile counts
+            if (c != null && !e.isArchived()) counts.put(e.getType(), c + 1);
         }
 
         for (String type : EntryType.ALL_TYPES) {
@@ -148,6 +149,16 @@ public class MainActivity extends BaseActivity {
 
             tileGrid.addView(tile);
         }
+
+        // v20: if odd number of types, add invisible spacer to fill last row gap
+        if (EntryType.ALL_TYPES.length % 2 != 0) {
+            View spacer = new View(this);
+            GridLayout.LayoutParams sp = new GridLayout.LayoutParams();
+            sp.width  = tileWidth;
+            sp.height = 0;
+            spacer.setLayoutParams(sp);
+            tileGrid.addView(spacer);
+        }
     }
 
     // ── Search ────────────────────────────────────────────────────────────────
@@ -157,6 +168,8 @@ public class MainActivity extends BaseActivity {
         String q = query.toLowerCase();
 
         for (Entry e : allEntries) {
+            // v19: exclude archived from global search
+            if (e.isArchived()) continue;
             for (int i = 1; i <= 7; i++) {
                 if (e.getFieldByIndex(i).toLowerCase().contains(q)) {
                     searchResults.add(e);

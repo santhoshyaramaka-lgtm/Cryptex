@@ -1,9 +1,9 @@
 # Cryptex — Project Status & Handover Document
-**Last Updated:** May 18, 2026
+**Last Updated:** May 19, 2026
 **App Name:** Cryptex
-**Current Stable Version:** v18.0 (versionCode 18) — closed ✅
-**Next Version:** v19.0 (versionCode 19) — open
-**APK Location:** `Cryptex_Key/Cryptex-v18.0-release.apk` (stable)
+**Current Stable Version:** v19.0 (versionCode 19) — closed ✅
+**Next Version:** v20.0 (versionCode 20) — open
+**APK Location:** `Cryptex_Key/Cryptex-v19.0-release.apk` (stable)
 
 ---
 
@@ -12,7 +12,7 @@
 **Cryptex** is a local, offline, encrypted personal vault / password manager for Android.
 - All data is stored on-device using `EncryptedSharedPreferences` (AES-256-GCM).
 - No internet permission. No cloud sync. No analytics.
-- Supports 6 entry types, backup/restore with password encryption, PIN lock, auto-lock, and security question recovery.
+- Supports 7 entry types (including Checklist), backup/restore with password encryption, PIN lock, auto-lock, biometric unlock, archive, and security question recovery.
 
 ---
 
@@ -32,6 +32,7 @@ Cryptex/
 │       │   ├── EntryAdapter.java
 │       │   ├── StorageHelper.java
 │       │   ├── BackupCrypto.java
+│       │   ├── ChecklistItem.java          ← v19: checklist item model
 │       │   ├── PinActivity.java
 │       │   ├── ForgotPinActivity.java
 │       │   ├── MainActivity.java
@@ -66,8 +67,8 @@ Cryptex/
 | `compileSdk` | 34 |
 | `minSdk` | 23 |
 | `targetSdk` | 34 |
-| `versionCode` | 18 |
-| `versionName` | "18.0" |
+| `versionCode` | 19 |
+| `versionName` | "19.0" |
 | `minifyEnabled` | **false** (must stay false — see note) |
 | Keystore | `Cryptex_Key/cryptex_release.jks` |
 | Key alias | `cryptex_key` |
@@ -107,9 +108,17 @@ implementation 'androidx.activity:activity:1.8.2'
 ### Entry
 Each entry has:
 - `id` — UUID string (unique)
-- `type` — one of 6 type constants (see below)
+- `type` — one of 7 type constants (see below)
 - `field1` – `field7` — generic string slots; meaning depends on type
-- `field7` is **always Notes** (multiline) for every type
+- `field7` is **always Notes** (multiline) for every non-checklist type
+- `checklistItems` — list of `ChecklistItem` objects (only used by `checklist` type)
+
+### ChecklistItem (`ChecklistItem.java`)
+| Field | Type | Description |
+|---|---|---|
+| `id` | String (UUID) | Unique ID per item |
+| `text` | String | Item label |
+| `checked` | Boolean | Whether item is ticked |
 
 ### Entry Types (`EntryType.java`)
 
@@ -121,8 +130,10 @@ Each entry has:
 | `personal` | Personal Info | 👤 | Title | Full Name | ID Number* | Date of Birth | — | — | Notes |
 | `pin` | PIN / Code | 🔐 | Title | PIN/Code* | — | — | — | — | Notes |
 | `note` | Note | 📝 | Title | — | — | — | — | — | Notes |
+| `checklist` | Checklist | ☑️ | Title (field1) | — | — | — | — | — | — |
 
 `*` = secret field (masked by default, eye-toggle to reveal)
+Checklist items are stored in the separate `checklistItems` list, not in field slots.
 
 ### Storage
 - All entries stored as JSON in `EncryptedSharedPreferences` under key `entries`.
@@ -301,20 +312,24 @@ Answer stored as `trim().toLowerCase()` in `EncryptedSharedPreferences`.
 | `forced_lock` | Boolean | Set to `true` on screen-off; cleared after PIN shown; triggers lock regardless of timeout |
 | `backup_pass` | String | Last used backup password |
 | `last_export_time` | Long | Timestamp of last successful export |
+| `biometric_enabled` | Boolean | Whether biometric unlock is active |
 
-### Entry JSON fields (v9.0)
+### Entry JSON fields (v19.0)
 Each entry in the `entries` JSON array includes:
 
 | JSON key | Type | Default | Purpose |
 |---|---|---|---|
 | `id` | String | — | UUID |
-| `type` | String | `website` | One of 6 type constants |
+| `type` | String | `website` | One of 7 type constants |
 | `field1`–`field7` | String | `""` | Entry data fields |
 | `updatedAt` | Long | `0` | Last modified millis; auto-stamped to `now` if `0` on load |
+| `createdAt` | Long | `0` | Set once on creation; falls back to `updatedAt` for pre-v12 entries |
 | `favourite` | Boolean | `false` | Whether entry is pinned to top |
 | `pinnedAt` | Long | `0` | When star was last tapped ON (millis); `0` when unstarred |
 | `attachmentName` | String | `""` | Original filename; empty = no attachment |
 | `attachmentData` | String | `""` | Base64-encoded file bytes (NO_WRAP); empty = no attachment |
+| `archived` | Boolean | `false` | Whether entry is archived (hidden from normal lists) |
+| `checklistItems` | JSON Array | `[]` | List of `{id, text, checked}` objects; only used for `checklist` type |
 
 ---
 
@@ -449,15 +464,56 @@ After a correct PIN was entered, `goToMain()` in `PinActivity` launched `MainAct
 
 ---
 
-## 12j. V19.0 — Candidate Features
+## 12j. V19.0 — Completed Features ✅ STABLE — Closed May 19, 2026
 
-> V18.0 is closed and stable. Items below are candidates for v19.0:
+### Archive / Unarchive
+- [x] **Archive button** — top-bar `📦` icon in `DetailActivity` (VIEW mode only); tapping shows confirm dialog "Archive this entry?"
+- [x] **Unarchive** — same button; when entry is already archived shows amber tint and dialog "Unarchive this entry?"
+- [x] **Auto-unstar on archive** — if a favourited entry is archived, `isFavourite` is cleared and `pinnedAt` reset to `0` automatically
+- [x] **Archived entries hidden** — `EntryAdapter` and `TypeListActivity` filter out `isArchived = true` entries from all normal list views and tile counts
+- [x] **`isArchived` field** — Boolean added to `Entry.java`; serialised as `"archived"` in JSON (default `false`); backward-compatible (missing key → `false`)
+- [x] **`archived` key** — stored in encrypted backup (`.msb`) and PDF export; round-trips correctly on import
+
+### Checklist Entry Type
+- [x] **New `checklist` type** — added to `EntryType.java` with emoji `☑️`, display name "Checklist", tile on `MainActivity`
+- [x] **`ChecklistItem` model** — `id` (UUID), `text` (String), `checked` (Boolean); `create(text)` factory
+- [x] **`checklistItems` list on `Entry`** — `List<ChecklistItem>` field; serialised as `"checklistItems"` JSON array; fallback UUID on missing `id` during import
+- [x] **`DetailActivity` checklist mode** — when type is `checklist`, standard field rows are hidden and `checklistContainer` is shown instead
+- [x] **New checklist title dialog** — on first open of a new checklist, a name dialog appears; entry is persisted immediately on confirm (no separate Save tap needed)
+- [x] **Unchecked / checked split** — items rendered in two dynamic `LinearLayout`s (`checklistUncheckedItems` / `checklistCheckedItems`); checked items appear below a divider
+- [x] **Item row layout** (`item_checklist_row.xml`) — checkbox, `TextView` (view state), `EditText` (edit state, `GONE` by default), delete `✕` button
+- [x] **Inline item editing** — tap any item text to switch it to an `EditText`; focus-loss auto-saves; clearing text deletes the item; Enter key saves and closes keyboard
+- [x] **Add item row** — persistent row at bottom of unchecked list:
+  - **Idle**: shows `+` icon + "Add item" hint text
+  - **Active** (focused): `+` is replaced by a disabled preview checkbox; ✕ cancel button appears; a secondary `+ Add item` row appears below for continuous entry
+  - Enter commits the item and keeps keyboard open for rapid multi-item entry
+  - ✕ cancel clears text, removes focus, returns to idle state
+  - Tapping secondary row re-focuses the add `EditText`
+- [x] **Progress indicator** — `"X of Y done"` label above items; hidden when list is empty
+- [x] **Empty state** — `"No items yet"` label shown when list has no items
+- [x] **Checkbox toggle** — updates model and re-renders instantly; encrypted write done on background thread (no UI lag)
+- [x] **Clear completed button** — shown in divider row when checked items exist; confirm dialog → removes all checked items → saves + re-renders
+- [x] **Share checklist** — formatted share text: title, unchecked items (☐), checked items (☑), progress line, "Shared from Cryptex" footer
+- [x] **Back press safety** — `onBackPressed()` commits any in-progress `etAddItem` text and saves any in-progress inline item edit before `finish()`
+- [x] **Re-entrancy guard** — `checklistRendering` boolean prevents `removeAllViews()` focus-loss events from triggering a recursive `renderChecklist()` call
+- [x] **Background save race fix** — `saveInBackground()` now serialises to JSON on the main thread and writes the immutable string on the background thread; eliminates shared-mutable-state race on ART
+- [x] **`saveEntriesJson(String)` API** — added to `StorageHelper` for direct pre-serialised JSON write
+
+### Version Bump
+- [x] `versionCode 19`, `versionName "19.0"`, `app_version` string updated to `"Version 19.0"`
+
+---
+
+## 12k. V20.0 — Candidate Features
+
+> V19.0 is closed and stable. Items below are candidates for v20.0:
 
 - [ ] **Password strength indicator** — Weak / Fair / Strong bar on Website / Card password fields
 - [ ] **Password generator** — generate strong random passwords directly inside Website / Card entry
 - [ ] **Custom security question** — let user type their own question instead of picking from 3
 - [ ] **Dark mode toggle** — manual override (currently follows system DayNight)
 - [ ] **Multiple attachments per entry** — currently limited to one file per entry
+- [ ] **Archived entries screen** — dedicated view to browse / restore / delete archived entries
 
 ---
 
@@ -482,3 +538,4 @@ After a correct PIN was entered, `goToMain()` in `PinActivity` launched `MainAct
 | v18.0 | Apr 13, 2026 | **App renamed MS → Cryptex**: applicationId `com.cryptex.app`, package `com.cryptex.app`, FileProvider authority, app name, biometric prompt title, PDF export title, backup filename, share footer, PDF filename all updated. Removed stale `com/ms/app/` source folder (root cause of build failure). Settings card order reordered: Import first, Export/PDF/UpdateBackup/AutoBackup, then Security section (Auto-lock, Biometric, Change PIN, Security Question). All old-name comments and strings cleaned up. |
 | v18.0 (repo init) | May 15, 2026 | **Git repository initialised**: Stale `com/ms/app/` duplicate source folder deleted. New release keystore created (`Cryptex_Key/cryptex_release.jks`, alias `cryptex_key`). Key folder renamed `ms_Key/` → `Cryptex_Key/`. Old `ms_release.jks` deleted. `build.gradle` updated with new keystore path, alias, and auto-copy target. `local.properties` added and tracked. `.vscode/` tracked. Build verified successful. |
 | v18.0 (features) | May 18, 2026 | **Resume where you left off**: back stack preserved on auto-lock — PIN screen pushed on top, `finish()` on success resumes exact previous screen. **Search highlight**: matched text highlighted amber (`#FFE082`) + forced black text in both global and per-type search, light + dark mode safe. **Icon upgrade**: all vault door elements scaled inside Android safe zone, radial gradient background, double glow rings, gold diagonal bolts, white keyhole with teal glow, all ring paths centred correctly at `(512,512)`. `versionCode 18`, `versionName "18.0"`. |
+| v19.0 | May 19, 2026 | **Archive / Unarchive**: archive button in detail view; amber tint when archived; auto-unstar on archive; archived entries hidden from all lists and tile counts; `isArchived` field added to `Entry`, serialised in JSON + backup. **Checklist type**: new `checklist` entry type (☑️); `ChecklistItem` model (id/text/checked); `checklistItems` list on `Entry`; dedicated checklist UI in `DetailActivity` (unchecked/checked split, inline add/edit/delete, progress indicator, empty state, clear completed, share format); add-row UX (idle `+` → active checkbox+cancel+secondary row, Enter keeps keyboard, ✕ cancels); re-entrancy guard; background save race fix (`saveEntriesJson` API on `StorageHelper`); back-press safety. `versionCode 19`, `versionName "19.0"`. |

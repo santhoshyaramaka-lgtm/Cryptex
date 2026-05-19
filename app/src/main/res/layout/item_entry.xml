@@ -82,6 +82,22 @@
             android:textSize="14sp"
             android:visibility="gone"/>
 
+        <!-- v19: Archived badge -->
+        <TextView
+            android:id="@+id/tvArchivedBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="4dp"
+            android:text="Archived"
+            android:textSize="10sp"
+            android:textColor="#FFFFFF"
+            android:background="#888888"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp"
+            android:visibility="gone"/>
+
         <!-- Star / Favourite toggle -->
         <ImageView
             android:id="@+id/ivStar"

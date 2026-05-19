@@ -72,7 +72,7 @@ public class DetailActivity extends BaseActivity {
     private final ImageButton[]  eyeButtons  = new ImageButton[7];
 
     // Top-bar buttons
-    private ImageButton btnEdit, btnShare, btnDelete;
+    private ImageButton btnEdit, btnShare, btnDelete, btnArchive;
 
     // v9: Unsaved-changes action bar
     private LinearLayout saveActionBar;
@@ -96,6 +96,23 @@ public class DetailActivity extends BaseActivity {
 
     // v12: Created date label shown in VIEW mode
     private TextView    tvCreatedAt;
+
+    // v20: Checklist views
+    private boolean      checklistRendering = false; // re-entrancy guard for renderChecklist()
+    private String       checklistEditingItemId = null; // ID of item currently being inline-edited
+    private LinearLayout checklistContainer;
+    private LinearLayout checklistUncheckedItems;
+    private LinearLayout checklistCheckedItems;
+    private View         checklistDividerRow;  // the whole divider+button row
+    private TextView     btnClearCompleted;
+    private TextView     tvChecklistProgress;
+    private TextView     tvChecklistEmpty;
+    private android.widget.EditText    etAddItem;
+    private android.widget.ImageButton btnCancelAddItem;
+    private CheckBox                   cbAddItemPreview;
+    private TextView                   tvAddItemPlus;
+    private View                       checklistAddRowSecondary;
+    private boolean                    isCommittingAddItem = false; // guard: prevent focus-loss deactivation during commit
 
     // v9: File picker launcher
     private ActivityResultLauncher<String[]> attachmentPicker;
@@ -129,9 +146,10 @@ public class DetailActivity extends BaseActivity {
 
         // ── Bind top-bar views ────────────────────────────────────────────────
         ((TextView)  findViewById(R.id.tvTypeEmoji)).setText(EntryType.getEmoji(entryType));
-        btnEdit   = findViewById(R.id.btnEdit);
-        btnShare  = findViewById(R.id.btnShare);
-        btnDelete = findViewById(R.id.btnDelete);
+        btnEdit    = findViewById(R.id.btnEdit);
+        btnShare   = findViewById(R.id.btnShare);
+        btnDelete  = findViewById(R.id.btnDelete);
+        btnArchive = findViewById(R.id.btnArchive);
 
         // v9: Unsaved-changes action bar
         saveActionBar = findViewById(R.id.saveActionBar);
@@ -168,6 +186,37 @@ public class DetailActivity extends BaseActivity {
 
         btnShare.setOnClickListener(v -> showShareDialog());
 
+        // v19: Archive / Unarchive
+        btnArchive.setOnClickListener(v -> {
+            boolean currentlyArchived = existingEntry.isArchived();
+            String title = currentlyArchived
+                    ? getString(R.string.unarchive_confirm_title)
+                    : getString(R.string.archive_confirm_title);
+            String msg = currentlyArchived
+                    ? getString(R.string.unarchive_confirm_msg)
+                    : getString(R.string.archive_confirm_msg);
+            String action = currentlyArchived
+                    ? getString(R.string.unarchive)
+                    : getString(R.string.archive);
+            new MaterialAlertDialogBuilder(this)
+                    .setTitle(title)
+                    .setMessage(msg)
+                    .setPositiveButton(action, (d, w) -> {
+                        boolean nowArchived = !currentlyArchived;
+                        existingEntry.setArchived(nowArchived);
+                        // Auto-unstar when archiving
+                        if (nowArchived && existingEntry.isFavourite()) {
+                            existingEntry.setFavourite(false);
+                            existingEntry.setPinnedAt(0);
+                        }
+                        storage.saveEntries(entries);
+                        storage.setBackupPending(true);
+                        finish();
+                    })
+                    .setNegativeButton(getString(R.string.cancel), null)
+                    .show();
+        });
+
         // v9: Register file picker launcher
         attachmentPicker = registerForActivityResult(
                 new ActivityResultContracts.OpenDocument(),
@@ -177,21 +226,67 @@ public class DetailActivity extends BaseActivity {
 
         // ── Build field rows ──────────────────────────────────────────────────
         LinearLayout container = findViewById(R.id.fieldsContainer);
-        String[]  labels = EntryType.getFieldLabels(entryType);
-        boolean[] secret = EntryType.getSecretFlags(entryType);
 
-        for (int i = 0; i < 7; i++) {
-            secretFlags[i] = secret[i];
-            if (labels[i].isEmpty()) continue;
-            buildFieldRow(container, i, labels[i], secret[i]);
-        }
+        // v20: bind checklist views
+        checklistContainer      = findViewById(R.id.checklistContainer);
+        checklistUncheckedItems = findViewById(R.id.checklistUncheckedItems);
+        checklistCheckedItems   = findViewById(R.id.checklistCheckedItems);
+        checklistDividerRow     = findViewById(R.id.checklistDividerRow);
+        btnClearCompleted       = findViewById(R.id.btnClearCompleted);
+        tvChecklistProgress     = findViewById(R.id.tvChecklistProgress);
+        tvChecklistEmpty        = findViewById(R.id.tvChecklistEmpty);
+        etAddItem                = findViewById(R.id.etAddItem);
+        btnCancelAddItem         = findViewById(R.id.btnCancelAddItem);
+        cbAddItemPreview         = findViewById(R.id.cbAddItemPreview);
+        tvAddItemPlus            = findViewById(R.id.tvAddItemPlus);
+        checklistAddRowSecondary = findViewById(R.id.checklistAddRowSecondary);
 
-        // ── Populate values ───────────────────────────────────────────────────
-        if (existingEntry != null) {
+        btnClearCompleted.setOnClickListener(v -> {
+            if (existingEntry == null) return;
+            long checkedCount = existingEntry.getChecklistItems().stream()
+                    .filter(ChecklistItem::isChecked).count();
+            if (checkedCount == 0) return;
+            String msg = checkedCount == 1
+                    ? "Remove 1 completed item?"
+                    : "Remove " + checkedCount + " completed items?";
+            new MaterialAlertDialogBuilder(this)
+                    .setTitle("Clear completed")
+                    .setMessage(msg)
+                    .setPositiveButton("Remove", (d, w) -> {
+                        existingEntry.getChecklistItems().removeIf(ChecklistItem::isChecked);
+                        saveChecklistAndRefresh();
+                    })
+                    .setNegativeButton("Cancel", null)
+                    .show();
+        });
+
+        if (EntryType.CHECKLIST.equals(entryType)) {
+            // Checklist type — skip fixed field rows, show checklist UI
+            container.setVisibility(View.GONE);
+            checklistContainer.setVisibility(View.VISIBLE);
+            setupChecklistAddRow();
+            if (existingEntry == null) {
+                // New checklist — prompt for title first
+                promptChecklistTitle();
+            } else {
+                renderChecklist();
+            }
+        } else {
+            // All other types — normal field rows
+            String[]  labels = EntryType.getFieldLabels(entryType);
+            boolean[] secret = EntryType.getSecretFlags(entryType);
             for (int i = 0; i < 7; i++) {
-                String val = existingEntry.getFieldByIndex(i + 1);
-                if (editViews[i]  != null) editViews[i].setText(val);
-                if (viewTexts[i]  != null) setViewText(i, val);
+                secretFlags[i] = secret[i];
+                if (labels[i].isEmpty()) continue;
+                buildFieldRow(container, i, labels[i], secret[i]);
+            }
+            // ── Populate values ───────────────────────────────────────────────
+            if (existingEntry != null) {
+                for (int i = 0; i < 7; i++) {
+                    String val = existingEntry.getFieldByIndex(i + 1);
+                    if (editViews[i]  != null) editViews[i].setText(val);
+                    if (viewTexts[i]  != null) setViewText(i, val);
+                }
             }
         }
 
@@ -218,6 +313,15 @@ public class DetailActivity extends BaseActivity {
 
     // ── Mode switching ────────────────────────────────────────────────────────
 
+    // v19: update archive button icon and tint based on current archived state
+    private void updateArchiveButton() {
+        if (existingEntry == null || btnArchive == null) return;
+        btnArchive.setImageResource(R.drawable.ic_archive);
+        btnArchive.setColorFilter(existingEntry.isArchived()
+                ? 0xFFFFAA00  // amber tint = currently archived
+                : 0xFFFFFFFF); // white = not archived
+    }
+
     private void switchToEditMode() {
         isEditMode = true;
         saveActionBar.setVisibility(View.GONE); // ensure bar is hidden when entering edit
@@ -234,6 +338,26 @@ public class DetailActivity extends BaseActivity {
     private void applyModeUI() {
         TextView tvScreenTitle = findViewById(R.id.tvScreenTitle);
 
+        // v20: Checklist has its own permanent UI — no edit/view mode toggle needed
+        if (EntryType.CHECKLIST.equals(entryType)) {
+            if (existingEntry != null) {
+                tvScreenTitle.setText(existingEntry.getDisplayTitle());
+                btnEdit.setVisibility(View.GONE);
+                btnShare.setVisibility(View.VISIBLE);
+                btnDelete.setVisibility(View.VISIBLE);
+                btnArchive.setVisibility(View.VISIBLE);
+                updateArchiveButton();
+            } else {
+                // New checklist — show title as "New Checklist", save on first item add
+                tvScreenTitle.setText("New Checklist");
+                btnEdit.setVisibility(View.GONE);
+                btnShare.setVisibility(View.GONE);
+                btnDelete.setVisibility(View.GONE);
+                btnArchive.setVisibility(View.GONE);
+            }
+            return;
+        }
+
         if (isEditMode) {
             // ── EDIT mode ─────────────────────────────────────────────────────
             tvScreenTitle.setText(existingEntry != null
@@ -241,6 +365,7 @@ public class DetailActivity extends BaseActivity {
                     : "New "  + EntryType.getDisplayName(entryType));
 
             btnEdit.setVisibility(View.GONE);
+            btnArchive.setVisibility(View.GONE); // v19: hidden in edit mode
 
             if (existingEntry != null) {
                 btnShare.setVisibility(View.VISIBLE);
@@ -266,6 +391,8 @@ public class DetailActivity extends BaseActivity {
             btnEdit.setVisibility(View.VISIBLE);
             btnShare.setVisibility(View.VISIBLE);
             btnDelete.setVisibility(View.VISIBLE);
+            btnArchive.setVisibility(View.VISIBLE); // v19
+            updateArchiveButton();
 
             // Show view texts, hide edit fields; close eye for secret fields
             for (int i = 0; i < 7; i++) {
@@ -309,6 +436,33 @@ public class DetailActivity extends BaseActivity {
 
     @Override
     public void onBackPressed() {
+        // v20: checklist — commit any in-flight edits, then go back
+        if (EntryType.CHECKLIST.equals(entryType)) {
+            // 1. Commit etAddItem staging text (saves + re-renders if non-empty)
+            commitAddItem();
+            // 2. If a row etText has focus, retrieve its tagged item and save the text,
+            //    then null the focus listener so the dying activity doesn't get a re-render.
+            View focused = getCurrentFocus();
+            if (focused instanceof android.widget.EditText && focused != etAddItem) {
+                Object tag = focused.getTag();
+                if (tag instanceof ChecklistItem && existingEntry != null) {
+                    ChecklistItem ci = (ChecklistItem) tag;
+                    String editedText = ((android.widget.EditText) focused).getText().toString().trim();
+                    if (editedText.isEmpty()) {
+                        existingEntry.getChecklistItems().remove(ci);
+                    } else {
+                        ci.setText(editedText);
+                    }
+                    ((android.widget.EditText) focused).setOnFocusChangeListener(null);
+                    checklistEditingItemId = null;
+                    existingEntry.setUpdatedAt(System.currentTimeMillis());
+                    storage.saveEntries(entries);
+                    storage.setBackupPending(true);
+                }
+            }
+            finish();
+            return;
+        }
         // If the action bar is already visible, second Back dismisses it (stay in edit)
         if (saveActionBar.getVisibility() == View.VISIBLE) {
             saveActionBar.setVisibility(View.GONE);
@@ -388,6 +542,291 @@ public class DetailActivity extends BaseActivity {
             int len = editViews[i].getText().length();
             if (len > 0) editViews[i].setSelection(len);
         }
+    }
+
+    // ── v20: Checklist ────────────────────────────────────────────────────────
+
+    /** For new checklists — show a title dialog before showing the items UI. */
+    private void promptChecklistTitle() {
+        android.widget.EditText etTitle = new android.widget.EditText(this);
+        etTitle.setHint("Checklist name");
+        etTitle.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        int pad = dpToPx(16);
+        etTitle.setPadding(pad, pad, pad, pad);
+
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("New Checklist")
+                .setView(etTitle)
+                .setCancelable(false)
+                .setPositiveButton("Create", (d, w) -> {
+                    String title = etTitle.getText().toString().trim();
+                    if (title.isEmpty()) title = "Checklist";
+                    // Create and persist the entry immediately
+                    long now = System.currentTimeMillis();
+                    Entry newEntry = new Entry(UUID.randomUUID().toString(),
+                            EntryType.CHECKLIST,
+                            title, "", "", "", "", "", "");
+                    newEntry.setUpdatedAt(now);
+                    newEntry.setCreatedAt(now);
+                    entries.add(newEntry);
+                    existingEntry = newEntry;
+                    storage.saveEntries(entries);
+                    storage.setBackupPending(true);
+                    // Update UI
+                    ((TextView) findViewById(R.id.tvScreenTitle)).setText(title);
+                    btnDelete.setVisibility(View.VISIBLE);
+                    btnShare.setVisibility(View.VISIBLE);
+                    btnArchive.setVisibility(View.VISIBLE);
+                    updateArchiveButton();
+                    renderChecklist();
+                    // Auto-focus add row on brand-new checklist
+                    etAddItem.post(() -> {
+                        etAddItem.requestFocus();
+                        android.view.inputmethod.InputMethodManager imm2 =
+                                (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                        if (imm2 != null) imm2.showSoftInput(etAddItem, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+                    });
+                })
+                .setNegativeButton("Cancel", (d, w) -> finish())
+                .show();
+
+        // Auto-show keyboard
+        etTitle.post(() -> {
+            etTitle.requestFocus();
+            android.view.inputmethod.InputMethodManager imm =
+                    (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (imm != null) imm.showSoftInput(etTitle, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+        });
+    }
+
+    private void setupChecklistAddRow() {
+        // Tapping the secondary row focuses the primary add row
+        checklistAddRowSecondary.setOnClickListener(v -> {
+            etAddItem.requestFocus();
+            android.view.inputmethod.InputMethodManager imm =
+                    (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (imm != null) imm.showSoftInput(etAddItem,
+                    android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+        });
+
+        // Gain focus → activate: replace "+" with checkbox, show ✕ and secondary row
+        etAddItem.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) {
+                tvAddItemPlus.setVisibility(View.GONE);
+                cbAddItemPreview.setVisibility(View.VISIBLE);
+                btnCancelAddItem.setVisibility(View.VISIBLE);
+                checklistAddRowSecondary.setVisibility(View.VISIBLE);
+            } else {
+                // Lost focus — commit if text present, then deactivate
+                commitAddItem();
+                tvAddItemPlus.setVisibility(View.VISIBLE);
+                cbAddItemPreview.setVisibility(View.GONE);
+                btnCancelAddItem.setVisibility(View.GONE);
+                checklistAddRowSecondary.setVisibility(View.GONE);
+            }
+        });
+
+        // Enter key → commit item, stay focused (secondary row stays visible)
+        etAddItem.setOnEditorActionListener((v, actionId, event) -> {
+            commitAddItem();
+            return true;
+        });
+
+        // ✕ button → clear text, remove focus → deactivates the row
+        btnCancelAddItem.setOnClickListener(v -> {
+            etAddItem.setText("");
+            etAddItem.clearFocus();
+            android.view.inputmethod.InputMethodManager imm =
+                    (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (imm != null) imm.hideSoftInputFromWindow(etAddItem.getWindowToken(), 0);
+        });
+    }
+
+    /** Commits whatever text is in etAddItem as a new checklist item (if non-empty). */
+    private void commitAddItem() {
+        String text = etAddItem.getText().toString().trim();
+        if (!text.isEmpty() && existingEntry != null) {
+            ChecklistItem item = ChecklistItem.create(text);
+            existingEntry.getChecklistItems().add(item);
+            etAddItem.setText("");
+            saveChecklistAndRefresh();
+            // Keep focus + keyboard open for continuous entry
+            etAddItem.post(() -> {
+                etAddItem.requestFocus();
+                android.view.inputmethod.InputMethodManager imm =
+                        (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                if (imm != null) imm.showSoftInput(etAddItem,
+                        android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+            });
+        }
+    }
+
+    /** Renders the full checklist — unchecked items, add row, divider, checked items. */
+    private void renderChecklist() {
+        if (checklistContainer == null) return;
+        if (checklistRendering) return; // re-entrancy guard: focus-loss on removeAllViews can re-trigger
+        checklistRendering = true;
+        try {
+            checklistUncheckedItems.removeAllViews();
+            checklistCheckedItems.removeAllViews();
+
+            if (existingEntry == null) {
+                tvChecklistEmpty.setVisibility(View.VISIBLE);
+                checklistDividerRow.setVisibility(View.GONE);
+                updateChecklistProgress();
+                return;
+            }
+
+            java.util.List<ChecklistItem> items = existingEntry.getChecklistItems();
+            int total   = items.size();
+            int checked = 0;
+            for (ChecklistItem item : items) { if (item.isChecked()) checked++; }
+
+            tvChecklistEmpty.setVisibility(total == 0 ? View.VISIBLE : View.GONE);
+            checklistDividerRow.setVisibility(checked > 0 ? View.VISIBLE : View.GONE);
+
+            for (ChecklistItem item : items) {
+                android.view.View row = buildChecklistItemRow(item);
+                if (item.isChecked()) {
+                    checklistCheckedItems.addView(row);
+                } else {
+                    checklistUncheckedItems.addView(row);
+                }
+                // If this item was tapped for editing, open its editor after the render
+                if (item.getId().equals(checklistEditingItemId)) {
+                    android.widget.EditText etText = row.findViewById(R.id.etItemText);
+                    TextView               tvText  = row.findViewById(R.id.tvItemText);
+                    android.widget.ImageButton btnDel = row.findViewById(R.id.btnDeleteItem);
+                    tvText.setVisibility(View.GONE);
+                    etText.setVisibility(View.VISIBLE);
+                    btnDel.setVisibility(View.VISIBLE);
+                    etText.setText(item.getText());
+                    etText.post(() -> {
+                        etText.requestFocus();
+                        etText.setSelection(etText.getText().length());
+                        android.view.inputmethod.InputMethodManager imm =
+                                (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                        if (imm != null) imm.showSoftInput(etText,
+                                android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+                    });
+                }
+            }
+            updateChecklistProgress();
+        } finally {
+            checklistRendering = false;
+        }
+    }
+
+    private android.view.View buildChecklistItemRow(ChecklistItem item) {
+        android.view.View rowView = getLayoutInflater().inflate(R.layout.item_checklist_row, null);
+
+        android.widget.CheckBox cb       = rowView.findViewById(R.id.cbItem);
+        TextView                tvText   = rowView.findViewById(R.id.tvItemText);
+        android.widget.EditText etText   = rowView.findViewById(R.id.etItemText);
+        android.widget.ImageButton btnDel = rowView.findViewById(R.id.btnDeleteItem);
+
+        // Set checkbox state — set BEFORE attaching listener to avoid triggering it during bind
+        cb.setOnCheckedChangeListener(null);
+        cb.setChecked(item.isChecked());
+        applyChecklistItemStyle(tvText, item);
+        etText.setTag(item); // v20: tag so onBackPressed can find the item from the focused view
+
+        // Checkbox toggle — update model + re-render immediately, save in background
+        cb.setOnCheckedChangeListener((btn, isChecked) -> {
+            item.setChecked(isChecked);
+            renderChecklist();          // instant visual update, no disk I/O
+            saveInBackground();         // encrypted write off the UI thread
+        });
+
+        // Tap text → mark this item as being edited and re-render.
+        // post() defers until after any in-progress render (guard) has finished.
+        tvText.setOnClickListener(v -> {
+            checklistEditingItemId = item.getId();
+            etAddItem.post(() -> renderChecklist());
+        });
+
+        // Focus lost → auto-save text, or delete item if text was cleared
+        etText.setOnFocusChangeListener((v, hasFocus) -> {
+            if (!hasFocus) {
+                checklistEditingItemId = null; // no longer editing this item
+                String newText = etText.getText().toString().trim();
+                if (newText.isEmpty()) {
+                    // User cleared the text — treat as delete
+                    etText.setOnFocusChangeListener(null); // prevent re-entrancy
+                    if (existingEntry != null) existingEntry.getChecklistItems().remove(item);
+                } else {
+                    item.setText(newText);
+                }
+                saveChecklistAndRefresh();
+            }
+        });
+
+        // Done/Enter on keyboard → save
+        etText.setOnEditorActionListener((v, actionId, event) -> {
+            etText.clearFocus();
+            return true;
+        });
+
+        // ✕ delete — clear focus listener first to avoid double-save on focus loss
+        btnDel.setOnClickListener(v -> {
+            etText.setOnFocusChangeListener(null);
+            if (existingEntry != null) {
+                existingEntry.getChecklistItems().remove(item);
+                saveChecklistAndRefresh();
+            }
+        });
+
+        return rowView;
+    }
+
+    private void applyChecklistItemStyle(TextView tv, ChecklistItem item) {
+        tv.setText(item.getText());
+        if (item.isChecked()) {
+            tv.setPaintFlags(tv.getPaintFlags() | android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);
+            tv.setTextColor(getResources().getColor(R.color.text_secondary));
+        } else {
+            tv.setPaintFlags(tv.getPaintFlags() & ~android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);
+            tv.setTextColor(getResources().getColor(R.color.text_primary));
+        }
+    }
+
+    private void updateChecklistProgress() {
+        if (existingEntry == null || tvChecklistProgress == null) return;
+        java.util.List<ChecklistItem> items = existingEntry.getChecklistItems();
+        int total   = items.size();
+        int checked = 0;
+        for (ChecklistItem item : items) { if (item.isChecked()) checked++; }
+        tvChecklistProgress.setText(total == 0 ? "" : checked + " of " + total + " done");
+        tvChecklistProgress.setVisibility(total > 0 ? View.VISIBLE : View.GONE);
+    }
+
+    private void saveChecklistAndRefresh() {
+        if (existingEntry != null) {
+            existingEntry.setUpdatedAt(System.currentTimeMillis());
+            storage.saveEntries(entries);
+            storage.setBackupPending(true);
+        }
+        renderChecklist();
+    }
+
+    /**
+     * Persists entries to encrypted storage on a background thread.
+     * Used by checkbox toggle so the UI re-renders instantly without
+     * waiting for the AES-256 EncryptedSharedPreferences write.
+     * JSON is serialised on the main thread (safe) and the string is
+     * written on a background thread (no shared-mutable-state race).
+     */
+    private void saveInBackground() {
+        if (existingEntry == null) return;
+        existingEntry.setUpdatedAt(System.currentTimeMillis());
+        // Serialize to JSON on the main thread — safe, no concurrent mutation
+        final String json = storage.exportToJson(entries);
+        if (json == null) return;
+        new Thread(() -> {
+            storage.saveEntriesJson(json);
+            storage.setBackupPending(true);
+        }).start();
     }
 
     // ── Field row builder ─────────────────────────────────────────────────────
@@ -542,6 +981,9 @@ public class DetailActivity extends BaseActivity {
     // ── Save ──────────────────────────────────────────────────────────────────
 
     private void saveEntry() {
+        // v20: checklist saves itself on every action — should never reach here
+        if (EntryType.CHECKLIST.equals(entryType)) { finish(); return; }
+
         if (editViews[0] != null && editViews[0].getText().toString().trim().isEmpty()) {
             editViews[0].setError("Required");
             editViews[0].requestFocus();
@@ -655,6 +1097,29 @@ public class DetailActivity extends BaseActivity {
     }
 
     private void shareEntry(boolean withAttachment) {
+        // v20: Checklist has its own share format
+        if (EntryType.CHECKLIST.equals(entryType) && existingEntry != null) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("☑️  ").append(existingEntry.getDisplayTitle()).append("\n");
+            sb.append("─────────────────────────\n");
+            java.util.List<ChecklistItem> items = existingEntry.getChecklistItems();
+            for (ChecklistItem item : items) {
+                if (!item.isChecked()) sb.append("☐ ").append(item.getText()).append("\n");
+            }
+            for (ChecklistItem item : items) {
+                if (item.isChecked()) sb.append("☑ ").append(item.getText()).append("\n");
+            }
+            int total = items.size();
+            int checked = 0;
+            for (ChecklistItem item : items) { if (item.isChecked()) checked++; }
+            sb.append("─────────────────────────\n");
+            sb.append(checked).append(" of ").append(total).append(" done\n");
+            sb.append("Shared from Cryptex");
+            startActivity(Intent.createChooser(
+                    buildTextOnlyShareIntent(sb.toString()), "Share via"));
+            return;
+        }
+
         String[] labels = EntryType.getFieldLabels(entryType);
         StringBuilder sb = new StringBuilder();
         sb.append(EntryType.getEmoji(entryType))
@@ -807,6 +1272,12 @@ public class DetailActivity extends BaseActivity {
 
     /** Initial setup of attachment row — caches views and binds click handlers. */
     private void setupAttachmentRow() {
+        // v20: checklist has no attachment
+        if (EntryType.CHECKLIST.equals(entryType)) {
+            View attachmentRow = findViewById(R.id.attachmentRow);
+            if (attachmentRow != null) attachmentRow.setVisibility(View.GONE);
+            return;
+        }
         // Cache views once — avoids repeated findViewById on every updateAttachmentRow() call
         tvAttachmentName    = findViewById(R.id.tvAttachmentName);
         btnAttachOpen       = findViewById(R.id.btnAttachOpen);

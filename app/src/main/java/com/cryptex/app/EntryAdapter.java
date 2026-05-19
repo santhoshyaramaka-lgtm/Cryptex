@@ -149,13 +149,18 @@ public class EntryAdapter extends RecyclerView.Adapter<EntryAdapter.ViewHolder> 
         holder.tvAttachIndicator.setVisibility(
                 entry.hasAttachment() ? View.VISIBLE : View.GONE);
 
+        // ── v19: Archived badge ────────────────────────────────────────────────
+        boolean archived = entry.isArchived();
+        holder.tvArchivedBadge.setVisibility(archived ? View.VISIBLE : View.GONE);
+
         // ── Check / chevron visibility ────────────────────────────────────────
         if (selectionMode) {
             holder.ivStar.setVisibility(View.GONE);
             holder.ivCheck.setVisibility(isSelected ? View.VISIBLE : View.INVISIBLE);
             holder.ivChevron.setVisibility(View.GONE);
         } else {
-            holder.ivStar.setVisibility(View.VISIBLE);
+            // v19: hide star on archived entries — archived records cannot be pinned
+            holder.ivStar.setVisibility(archived ? View.GONE : View.VISIBLE);
             holder.ivStar.setImageResource(
                     entry.isFavourite() ? R.drawable.ic_star_filled : R.drawable.ic_star_empty);
             holder.ivStar.setOnClickListener(v -> {
@@ -200,7 +205,7 @@ public class EntryAdapter extends RecyclerView.Adapter<EntryAdapter.ViewHolder> 
 
     static class ViewHolder extends RecyclerView.ViewHolder {
         CardView  card;
-        TextView  tvTitle, tvSubtitle, tvIcon, tvTimestamp, tvAttachIndicator;
+        TextView  tvTitle, tvSubtitle, tvIcon, tvTimestamp, tvAttachIndicator, tvArchivedBadge;
         ImageView ivStar, ivCheck, ivChevron;
 
         ViewHolder(View view) {
@@ -211,6 +216,7 @@ public class EntryAdapter extends RecyclerView.Adapter<EntryAdapter.ViewHolder> 
             tvIcon             = view.findViewById(R.id.tvIcon);
             tvTimestamp        = view.findViewById(R.id.tvTimestamp);
             tvAttachIndicator  = view.findViewById(R.id.tvAttachIndicator);
+            tvArchivedBadge    = view.findViewById(R.id.tvArchivedBadge);
             ivStar             = view.findViewById(R.id.ivStar);
             ivCheck            = view.findViewById(R.id.ivCheck);
             ivChevron          = view.findViewById(R.id.ivChevron);
