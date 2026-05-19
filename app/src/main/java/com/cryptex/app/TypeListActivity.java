@@ -36,8 +36,9 @@ public class TypeListActivity extends BaseActivity {
     private EntryAdapter  adapter;
 
     private String  entryType;
-    private String  searchQuery = "";
-    private int     sortMode    = 0;   // 0=A→Z (default), 1=Z→A
+    private String  searchQuery  = "";
+    private int     sortMode     = 0;   // 0=A→Z (default), 1=Z→A
+    private boolean showArchived = false; // v19: hidden by default
 
     private TextView             tvEntryCount;
     private TextView             tvEmpty;
@@ -45,6 +46,7 @@ public class TypeListActivity extends BaseActivity {
     private LinearLayout         selectionTitleRow;
     private TextView             tvSelectionCount;
     private FloatingActionButton fab;
+    private FloatingActionButton fabArchive;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -67,6 +69,7 @@ public class TypeListActivity extends BaseActivity {
         selectionTitleRow = findViewById(R.id.selectionTitleRow);
         tvSelectionCount  = findViewById(R.id.tvSelectionCount);
         fab               = findViewById(R.id.fab);
+        fabArchive        = findViewById(R.id.fabArchive);
 
         // Top bar — emoji + type name
         ((TextView) findViewById(R.id.tvTypeEmoji)).setText(EntryType.getEmoji(entryType));
@@ -83,10 +86,17 @@ public class TypeListActivity extends BaseActivity {
             applyFilter();
         });
 
+        // Archive toggle FAB
+        fabArchive.setOnClickListener(v -> {
+            showArchived = !showArchived;
+            updateArchiveFabState();
+            applyFilter();
+        });
+
         // Cancel selection
         findViewById(R.id.btnCancelSelection).setOnClickListener(v -> exitSelectionMode());
 
-        // FAB — add new entry of this type directly
+        // FAB — add new entry (hidden in archive view) / delete selected
         fab.setOnClickListener(v -> {
             if (adapter.isInSelectionMode()) {
                 confirmDeleteSelected();
@@ -136,6 +146,10 @@ public class TypeListActivity extends BaseActivity {
             public void handleOnBackPressed() {
                 if (adapter.isInSelectionMode()) {
                     exitSelectionMode();
+                } else if (showArchived) {
+                    showArchived = false;
+                    updateArchiveFabState();
+                    applyFilter();
                 } else {
                     setEnabled(false);
                     getOnBackPressedDispatcher().onBackPressed();
@@ -170,6 +184,10 @@ public class TypeListActivity extends BaseActivity {
         for (Entry e : allEntries) {
             // Only entries of this type
             if (!e.getType().equals(entryType)) continue;
+
+            // v19: strict separation — archived view shows only archived, active view shows only active
+            if (showArchived && !e.isArchived()) continue;
+            if (!showArchived && e.isArchived()) continue;
 
             // Search across all 7 fields
             if (!searchQuery.isEmpty()) {
@@ -206,7 +224,12 @@ public class TypeListActivity extends BaseActivity {
 
         // Entry count
         int count = filteredEntries.size();
-        tvEntryCount.setText(count == 1 ? "1 entry" : count + " entries");
+        String label = showArchived ? " archived" : " active";
+        tvEntryCount.setText(count == 1 ? "1" + label + " entry" : count + label + " entries");
+
+        // Hide both FABs in archive view
+        fab.setVisibility(showArchived ? View.GONE : View.VISIBLE);
+        fabArchive.setVisibility(showArchived ? View.GONE : View.VISIBLE);
 
         adapter.setSearchQuery(searchQuery);
         adapter.notifyDataSetChanged();
@@ -227,6 +250,7 @@ public class TypeListActivity extends BaseActivity {
         normalTitleRow.setVisibility(View.VISIBLE);
         selectionTitleRow.setVisibility(View.GONE);
         fab.setImageResource(R.drawable.ic_add);
+        fab.setVisibility(showArchived ? View.GONE : View.VISIBLE);
     }
 
     private void updateSelectionCount() {
@@ -274,6 +298,26 @@ public class TypeListActivity extends BaseActivity {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private void updateArchiveFabState() {
+        if (showArchived) {
+            fabArchive.setAlpha(1.0f);
+            fabArchive.setBackgroundTintList(
+                    android.content.res.ColorStateList.valueOf(
+                            androidx.core.content.ContextCompat.getColor(this, R.color.btn_bg)));
+            fabArchive.setImageTintList(
+                    android.content.res.ColorStateList.valueOf(
+                            androidx.core.content.ContextCompat.getColor(this, R.color.btn_text)));
+        } else {
+            fabArchive.setAlpha(0.45f);
+            fabArchive.setBackgroundTintList(
+                    android.content.res.ColorStateList.valueOf(
+                            androidx.core.content.ContextCompat.getColor(this, R.color.card_bg)));
+            fabArchive.setImageTintList(
+                    android.content.res.ColorStateList.valueOf(
+                            androidx.core.content.ContextCompat.getColor(this, R.color.text_secondary)));
+        }
+    }
 
     private void updateEmptyState() {
         tvEmpty.setVisibility(filteredEntries.isEmpty() ? View.VISIBLE : View.GONE);

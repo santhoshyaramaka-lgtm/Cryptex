@@ -75,6 +75,12 @@ public class StorageHelper {
         }
     }
 
+    /** Saves a pre-serialised JSON string directly — used by background saves to avoid race conditions. */
+    public void saveEntriesJson(String json) {
+        if (json == null) return;
+        prefs.edit().putString(KEY_ENTRIES, json).apply();
+    }
+
     // ── EXPORT / IMPORT ───────────────────────────────────────────────────────
 
     public String exportToJson(List<Entry> entries) {
@@ -120,6 +126,17 @@ public class StorageHelper {
         obj.put("pinnedAt",        e.getPinnedAt());
         obj.put("attachmentName",  e.getAttachmentName());
         obj.put("attachmentData",  e.getAttachmentData());
+        obj.put("archived",        e.isArchived()); // v19
+        // v20: checklist items
+        JSONArray itemsArr = new JSONArray();
+        for (ChecklistItem item : e.getChecklistItems()) {
+            JSONObject itemObj = new JSONObject();
+            itemObj.put("id",      item.getId());
+            itemObj.put("text",    item.getText());
+            itemObj.put("checked", item.isChecked());
+            itemsArr.put(itemObj);
+        }
+        obj.put("checklistItems", itemsArr);
         return obj;
     }
 
@@ -153,6 +170,21 @@ public class StorageHelper {
         entry.setPinnedAt(obj.optLong("pinnedAt", 0));
         entry.setAttachmentName(obj.optString("attachmentName", ""));
         entry.setAttachmentData(obj.optString("attachmentData", ""));
+        entry.setArchived(obj.optBoolean("archived", false)); // v19
+        // v20: checklist items
+        JSONArray itemsArr = obj.optJSONArray("checklistItems");
+        if (itemsArr != null) {
+            List<ChecklistItem> items = new ArrayList<>();
+            for (int i = 0; i < itemsArr.length(); i++) {
+                JSONObject itemObj = itemsArr.getJSONObject(i);
+                items.add(new ChecklistItem(
+                        itemObj.optString("id",   java.util.UUID.randomUUID().toString()),
+                        itemObj.optString("text",  ""),
+                        itemObj.optBoolean("checked", false)
+                ));
+            }
+            entry.setChecklistItems(items);
+        }
         return entry;
     }
 

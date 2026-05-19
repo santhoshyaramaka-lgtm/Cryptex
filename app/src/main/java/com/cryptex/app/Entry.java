@@ -1,5 +1,8 @@
 package com.cryptex.app;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Represents a single stored entry.
  *
@@ -23,8 +26,10 @@ public class Entry {
     private long    createdAt     = 0; // v12: set once on creation, never changed on edit
     private boolean isFavourite   = false;
     private long    pinnedAt      = 0;
-    private String  attachmentName = ""; // v9: original filename (e.g. "passport.pdf")
-    private String  attachmentData = ""; // v9: Base64 encoded file content (empty = no attachment)
+    private String  attachmentName = "";
+    private String  attachmentData = "";
+    private boolean isArchived     = false; // v19: archived entries hidden from lists
+    private List<ChecklistItem> checklistItems = new ArrayList<>(); // v20: checklist type
 
     public Entry(String id, String type,
                  String field1, String field2, String field3,
@@ -84,6 +89,14 @@ public class Entry {
     public String getAttachmentData()              { return attachmentData; }
     public void   setAttachmentData(String data)   { this.attachmentData = data != null ? data : ""; }
     public boolean hasAttachment()                 { return !attachmentName.isEmpty(); }
+
+    // ── isArchived (v19) ──────────────────────────────────────────────────────
+    public boolean isArchived()                    { return isArchived; }
+    public void    setArchived(boolean archived)   { this.isArchived = archived; }
+
+    // ── checklistItems (v20) ──────────────────────────────────────────────────
+    public List<ChecklistItem> getChecklistItems()                         { return checklistItems; }
+    public void                setChecklistItems(List<ChecklistItem> items){ this.checklistItems = items != null ? items : new ArrayList<>(); }
 
     // ── Convenience: get field by 1-based index ───────────────────────────────
     public String getFieldByIndex(int index) {

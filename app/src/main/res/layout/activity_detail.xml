@@ -62,6 +62,16 @@
             android:src="@drawable/ic_share"
             android:visibility="gone"/>
 
+        <!-- v19: Archive / Unarchive toggle button -->
+        <ImageButton
+            android:id="@+id/btnArchive"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Archive"
+            android:src="@drawable/ic_archive"
+            android:visibility="gone"/>
+
         <ImageButton
             android:id="@+id/btnDelete"
             android:layout_width="40dp"
@@ -91,6 +101,172 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"/>
+
+            <!-- v20: Checklist container — visible only for CHECKLIST type -->
+            <LinearLayout
+                android:id="@+id/checklistContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <!-- Progress label e.g. "3 of 5 done" -->
+                <TextView
+                    android:id="@+id/tvChecklistProgress"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="12sp"
+                    android:textColor="@color/text_secondary"
+                    android:layout_marginBottom="8dp"/>
+
+                <!-- Unchecked items injected here dynamically -->
+                <LinearLayout
+                    android:id="@+id/checklistUncheckedItems"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"/>
+
+                <!-- Add item row — inactive: shows "+ Add item" label
+                                  active:   shows ☐ [input] ✕ -->
+                <LinearLayout
+                    android:id="@+id/checklistAddRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="4dp">
+
+                    <!-- Inactive: "+" label. Hidden when active -->
+                    <TextView
+                        android:id="@+id/tvAddItemPlus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="+"
+                        android:textSize="20sp"
+                        android:textColor="@color/text_secondary"
+                        android:layout_marginEnd="12dp"/>
+
+                    <!-- Active: disabled checkbox (visual only). Hidden when inactive -->
+                    <CheckBox
+                        android:id="@+id/cbAddItemPreview"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:buttonTint="@color/text_primary"
+                        android:enabled="false"
+                        android:checked="false"
+                        android:visibility="gone"/>
+
+                    <EditText
+                        android:id="@+id/etAddItem"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:background="@null"
+                        android:hint="Add item"
+                        android:textColorHint="@color/hint_color"
+                        android:textColor="@color/text_primary"
+                        android:textSize="15sp"
+                        android:inputType="text"
+                        android:imeOptions="actionUnspecified"
+                        android:singleLine="true"/>
+
+                    <!-- ✕ cancel — only visible when active -->
+                    <ImageButton
+                        android:id="@+id/btnCancelAddItem"
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:src="@drawable/ic_close"
+                        android:tint="@color/text_secondary"
+                        android:contentDescription="Cancel"
+                        android:visibility="gone"/>
+
+                </LinearLayout>
+
+                <!-- Secondary "+ Add item" row — shown below active input row when focused -->
+                <LinearLayout
+                    android:id="@+id/checklistAddRowSecondary"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="4dp"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="+"
+                        android:textSize="20sp"
+                        android:textColor="@color/text_secondary"
+                        android:layout_marginEnd="12dp"/>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Add item"
+                        android:textSize="15sp"
+                        android:textColor="@color/text_secondary"/>
+
+                </LinearLayout>
+
+                <!-- Divider row — only shown when there are checked items -->
+                <LinearLayout
+                    android:id="@+id/checklistDividerRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginTop="4dp"
+                    android:layout_marginBottom="4dp"
+                    android:visibility="gone">
+
+                    <View
+                        android:id="@+id/checklistDivider"
+                        android:layout_width="0dp"
+                        android:layout_height="1dp"
+                        android:layout_weight="1"
+                        android:background="@color/divider"/>
+
+                    <TextView
+                        android:id="@+id/btnClearCompleted"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Clear completed"
+                        android:textSize="12sp"
+                        android:textColor="@color/text_secondary"
+                        android:paddingStart="10dp"
+                        android:paddingEnd="4dp"
+                        android:paddingTop="4dp"
+                        android:paddingBottom="4dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"/>
+
+                </LinearLayout>
+
+                <!-- Checked items injected here dynamically -->
+                <LinearLayout
+                    android:id="@+id/checklistCheckedItems"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"/>
+
+                <!-- Empty state -->
+                <TextView
+                    android:id="@+id/tvChecklistEmpty"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="No items yet"
+                    android:textColor="@color/hint_color"
+                    android:textSize="14sp"
+                    android:gravity="center"
+                    android:paddingTop="16dp"
+                    android:paddingBottom="16dp"
+                    android:visibility="gone"/>
+
+            </LinearLayout>
 
             <!-- v9: Attachment row — same style as a field row -->
             <LinearLayout

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Cryptex</string>
-    <string name="app_version">Version 18.0</string>
+    <string name="app_version">Version 19.0</string>
     <string name="enter_pin">Enter PIN</string>
     <string name="set_pin">Set New PIN</string>
     <string name="confirm_pin">Confirm PIN</string>
@@ -113,4 +113,16 @@
     <string name="biometric_disabled_msg">Biometric unlock disabled.</string>
     <string name="biometric_not_available">Biometric hardware not available or no fingerprints enrolled. Please set up fingerprint in device Settings first.</string>
     <string name="biometric_verify_pin">Enter your PIN to enable biometric unlock.</string>
+
+    <!-- v19: Archive -->
+    <string name="archive">Archive</string>
+    <string name="unarchive">Unarchive</string>
+    <string name="archived_badge">Archived</string>
+    <string name="archive_confirm_title">Archive Entry?</string>
+    <string name="archive_confirm_msg">This entry will be hidden from your list but kept safely in your vault. You can unarchive it anytime.</string>
+    <string name="unarchive_confirm_title">Unarchive Entry?</string>
+    <string name="unarchive_confirm_msg">This entry will be restored to your active list.</string>
+    <string name="archived_count">%d archived</string>
+    <string name="show_archived">Show Archived</string>
+    <string name="hide_archived">Hide Archived</string>
 </resources>

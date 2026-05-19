@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Single checklist item row — v20 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingStart="4dp"
+    android:paddingEnd="4dp"
+    android:paddingTop="2dp"
+    android:paddingBottom="2dp"
+    android:minHeight="48dp">
+
+    <!-- Checkbox -->
+    <CheckBox
+        android:id="@+id/cbItem"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="8dp"
+        android:buttonTint="@color/text_primary"/>
+
+    <!-- Item text (TextView in normal state, replaced by EditText when focused) -->
+    <TextView
+        android:id="@+id/tvItemText"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:textSize="15sp"
+        android:textColor="@color/text_primary"
+        android:background="@null"/>
+
+    <!-- Inline EditText — GONE by default, shown when row is active -->
+    <EditText
+        android:id="@+id/etItemText"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:textSize="15sp"
+        android:textColor="@color/text_primary"
+        android:background="@null"
+        android:inputType="text"
+        android:imeOptions="actionDone"
+        android:singleLine="true"
+        android:visibility="gone"/>
+
+    <!-- Delete (✕) — GONE by default, shown only on active row -->
+    <ImageButton
+        android:id="@+id/btnDeleteItem"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:src="@drawable/ic_close"
+        android:tint="@color/text_secondary"
+        android:contentDescription="Delete item"
+        android:visibility="gone"/>
+
+</LinearLayout>
