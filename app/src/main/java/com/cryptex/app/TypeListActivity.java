@@ -6,9 +6,9 @@ import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.View;
 import android.widget.EditText;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.AppCompatActivity;
@@ -37,8 +37,14 @@ public class TypeListActivity extends BaseActivity {
 
     private String  entryType;
     private String  searchQuery  = "";
-    private int     sortMode     = 0;   // 0=A→Z (default), 1=Z→A
-    private boolean showArchived = false; // v19: hidden by default
+    private int     sortMode     = 0;   // 0=Date newest, 1=Date oldest, 2=Name A→Z, 3=Name Z→A
+    private boolean showArchived = false;
+
+    // Sort mode constants
+    private static final int SORT_DATE_NEW = 0;
+    private static final int SORT_DATE_OLD = 1;
+    private static final int SORT_NAME_AZ  = 2;
+    private static final int SORT_NAME_ZA  = 3;
 
     private TextView             tvEntryCount;
     private TextView             tvEmpty;
@@ -46,7 +52,7 @@ public class TypeListActivity extends BaseActivity {
     private LinearLayout         selectionTitleRow;
     private TextView             tvSelectionCount;
     private FloatingActionButton fab;
-    private FloatingActionButton fabArchive;
+    private ImageButton          btnArchiveToggle;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -62,6 +68,9 @@ public class TypeListActivity extends BaseActivity {
         allEntries      = new ArrayList<>();
         filteredEntries = new ArrayList<>();
 
+        // Load persisted sort mode for this type (default 0 = Date newest first)
+        sortMode = storage.getSortMode(entryType);
+
         // ── Bind views ────────────────────────────────────────────────────────
         tvEntryCount      = findViewById(R.id.tvEntryCount);
         tvEmpty           = findViewById(R.id.tvEmpty);
@@ -69,7 +78,7 @@ public class TypeListActivity extends BaseActivity {
         selectionTitleRow = findViewById(R.id.selectionTitleRow);
         tvSelectionCount  = findViewById(R.id.tvSelectionCount);
         fab               = findViewById(R.id.fab);
-        fabArchive        = findViewById(R.id.fabArchive);
+        btnArchiveToggle  = findViewById(R.id.btnArchiveToggle);
 
         // Top bar — emoji + type name
         ((TextView) findViewById(R.id.tvTypeEmoji)).setText(EntryType.getEmoji(entryType));
@@ -78,18 +87,12 @@ public class TypeListActivity extends BaseActivity {
         // Back
         findViewById(R.id.btnBack).setOnClickListener(v -> finish());
 
-        // Sort — 2 modes: 0 = A→Z (default), 1 = Z→A
-        findViewById(R.id.btnSort).setOnClickListener(v -> {
-            sortMode = (sortMode + 1) % 2;
-            String[] labels = {"A → Z", "Z → A"};
-            Toast.makeText(this, "Sort: " + labels[sortMode], Toast.LENGTH_SHORT).show();
-            applyFilter();
-        });
+        // Sort — tap opens dialog with Date / Name options
+        findViewById(R.id.btnSort).setOnClickListener(v -> showSortDialog());
 
-        // Archive toggle FAB
-        fabArchive.setOnClickListener(v -> {
+        // Archive toggle — top bar button
+        btnArchiveToggle.setOnClickListener(v -> {
             showArchived = !showArchived;
-            updateArchiveFabState();
             applyFilter();
         });
 
@@ -148,7 +151,6 @@ public class TypeListActivity extends BaseActivity {
                     exitSelectionMode();
                 } else if (showArchived) {
                     showArchived = false;
-                    updateArchiveFabState();
                     applyFilter();
                 } else {
                     setEnabled(false);
@@ -206,8 +208,8 @@ public class TypeListActivity extends BaseActivity {
         }
 
         // Single combined sort:
-        // ★ Pinned → top, most recently starred first (pinnedAt descending)
-        // ☆ Regular → A→Z (sortMode 0) or Z→A (sortMode 1)
+        // ★ Pinned → top, most recently starred first (pinnedAt descending) — never affected by sortMode
+        // ☆ Regular → sorted by user's chosen sortMode
         Collections.sort(filteredEntries, (a, b) -> {
             // Step 1: pinned always above non-pinned
             if (a.isFavourite() != b.isFavourite())
@@ -215,21 +217,25 @@ public class TypeListActivity extends BaseActivity {
             // Step 2: both pinned → most recently starred first
             if (a.isFavourite())
                 return Long.compare(b.getPinnedAt(), a.getPinnedAt());
-            // Step 3: both regular → A→Z or Z→A
-            if (sortMode == 1)
-                return b.getDisplayTitle().compareToIgnoreCase(a.getDisplayTitle());
-            else
-                return a.getDisplayTitle().compareToIgnoreCase(b.getDisplayTitle());
+            // Step 3: both unpinned → apply sortMode
+            switch (sortMode) {
+                case SORT_DATE_OLD: return Long.compare(a.getUpdatedAt(), b.getUpdatedAt());
+                case SORT_NAME_AZ:  return a.getDisplayTitle().compareToIgnoreCase(b.getDisplayTitle());
+                case SORT_NAME_ZA:  return b.getDisplayTitle().compareToIgnoreCase(a.getDisplayTitle());
+                default:            return Long.compare(b.getUpdatedAt(), a.getUpdatedAt()); // SORT_DATE_NEW
+            }
         });
 
-        // Entry count
+        // Entry count label
         int count = filteredEntries.size();
         String label = showArchived ? " archived" : " active";
         tvEntryCount.setText(count == 1 ? "1" + label + " entry" : count + label + " entries");
 
-        // Hide both FABs in archive view
+        // Add FAB hidden in archive view (can't add new entries there)
         fab.setVisibility(showArchived ? View.GONE : View.VISIBLE);
-        fabArchive.setVisibility(showArchived ? View.GONE : View.VISIBLE);
+
+        // Archive button: hidden in archive view, grey if no archived entries, white if has some
+        updateArchiveButtonState();
 
         adapter.setSearchQuery(searchQuery);
         adapter.notifyDataSetChanged();
@@ -299,27 +305,76 @@ public class TypeListActivity extends BaseActivity {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private void updateArchiveFabState() {
+    /** Shows the sort dialog — 2 rows (Date / Name), each toggles direction on re-tap. */
+    private void showSortDialog() {
+        // Build labels dynamically reflecting current state
+        boolean isDateActive = (sortMode == SORT_DATE_NEW || sortMode == SORT_DATE_OLD);
+        boolean isNameActive = (sortMode == SORT_NAME_AZ  || sortMode == SORT_NAME_ZA);
+
+        String dateLabel = "Date" + (isDateActive
+                ? (sortMode == SORT_DATE_NEW ? "  ·  Newest first" : "  ·  Oldest first") : "");
+        String nameLabel = "Name" + (isNameActive
+                ? (sortMode == SORT_NAME_AZ  ? "  ·  A → Z"        : "  ·  Z → A")        : "");
+
+        // ● active row, ○ inactive row
+        String[] options = {
+                (isDateActive ? "●  " : "○  ") + dateLabel,
+                (isNameActive ? "●  " : "○  ") + nameLabel
+        };
+
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("Sort by")
+                .setItems(options, (d, which) -> {
+                    if (which == 0) {
+                        // Date tapped
+                        if (isDateActive) {
+                            // Already on Date — flip direction
+                            sortMode = (sortMode == SORT_DATE_NEW) ? SORT_DATE_OLD : SORT_DATE_NEW;
+                        } else {
+                            // Switch to Date — default newest first
+                            sortMode = SORT_DATE_NEW;
+                        }
+                    } else {
+                        // Name tapped
+                        if (isNameActive) {
+                            // Already on Name — flip direction
+                            sortMode = (sortMode == SORT_NAME_AZ) ? SORT_NAME_ZA : SORT_NAME_AZ;
+                        } else {
+                            // Switch to Name — default A→Z
+                            sortMode = SORT_NAME_AZ;
+                        }
+                    }
+                    storage.setSortMode(entryType, sortMode);
+                    applyFilter();
+                })
+                .show();
+    }
+
+    private void updateArchiveButtonState() {
         if (showArchived) {
-            fabArchive.setAlpha(1.0f);
-            fabArchive.setBackgroundTintList(
-                    android.content.res.ColorStateList.valueOf(
-                            androidx.core.content.ContextCompat.getColor(this, R.color.btn_bg)));
-            fabArchive.setImageTintList(
-                    android.content.res.ColorStateList.valueOf(
-                            androidx.core.content.ContextCompat.getColor(this, R.color.btn_text)));
-        } else {
-            fabArchive.setAlpha(0.45f);
-            fabArchive.setBackgroundTintList(
-                    android.content.res.ColorStateList.valueOf(
-                            androidx.core.content.ContextCompat.getColor(this, R.color.card_bg)));
-            fabArchive.setImageTintList(
-                    android.content.res.ColorStateList.valueOf(
-                            androidx.core.content.ContextCompat.getColor(this, R.color.text_secondary)));
+            // Inside archive view — hide the button
+            btnArchiveToggle.setVisibility(View.GONE);
+            return;
         }
+        btnArchiveToggle.setVisibility(View.VISIBLE);
+        // Check if any archived entries exist for this type
+        boolean hasArchived = false;
+        for (Entry e : allEntries) {
+            if (e.getType().equals(entryType) && e.isArchived()) {
+                hasArchived = true;
+                break;
+            }
+        }
+        // Has archived → white/enabled; none → greyed out/disabled
+        btnArchiveToggle.setEnabled(hasArchived);
+        btnArchiveToggle.setAlpha(hasArchived ? 1.0f : 0.35f);
     }
 
     private void updateEmptyState() {
-        tvEmpty.setVisibility(filteredEntries.isEmpty() ? View.VISIBLE : View.GONE);
+        boolean empty = filteredEntries.isEmpty();
+        tvEmpty.setVisibility(empty ? View.VISIBLE : View.GONE);
+        if (empty) {
+            tvEmpty.setText(showArchived ? "No archived entries" : getString(R.string.no_entries));
+        }
     }
 }

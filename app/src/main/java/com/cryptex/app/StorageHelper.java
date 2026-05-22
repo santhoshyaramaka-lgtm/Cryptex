@@ -20,6 +20,7 @@ public class StorageHelper {
     private static final String KEY_PIN     = "pin";
 
     private final SharedPreferences prefs;
+    private boolean encryptionFailed = false; // true if EncryptedSharedPreferences init failed
 
     public StorageHelper(Context context) {
         SharedPreferences temp;
@@ -35,10 +36,16 @@ public class StorageHelper {
                     EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             );
         } catch (Exception e) {
+            // Encryption unavailable — fall back to plain prefs but flag it
+            // so the app can warn the user rather than silently storing plain text
+            encryptionFailed = true;
             temp = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         }
         prefs = temp;
     }
+
+    /** Returns true if encrypted storage could not be initialised. */
+    public boolean isEncryptionFailed() { return encryptionFailed; }
 
     // ── PIN ───────────────────────────────────────────────────────────────────
 
@@ -47,6 +54,17 @@ public class StorageHelper {
     public void savePin(String pin) { prefs.edit().putString(KEY_PIN, pin).apply(); }
 
     public boolean checkPin(String pin) { return pin.equals(prefs.getString(KEY_PIN, "")); }
+
+    // ── SORT MODE (per entry type) ─────────────────────────────────────────────
+    // 0 = Date newest first (default), 1 = Date oldest first, 2 = Name A→Z, 3 = Name Z→A
+
+    public int getSortMode(String entryType) {
+        return prefs.getInt("sort_mode_" + entryType, 0);
+    }
+
+    public void setSortMode(String entryType, int mode) {
+        prefs.edit().putInt("sort_mode_" + entryType, mode).apply();
+    }
 
     // ── ENTRIES ───────────────────────────────────────────────────────────────
 

@@ -116,6 +116,9 @@ public class DetailActivity extends BaseActivity {
 
     // v9: File picker launcher
     private ActivityResultLauncher<String[]> attachmentPicker;
+    // v20: Camera capture launcher
+    private ActivityResultLauncher<Uri>      cameraPicker;
+    private Uri                              cameraOutputUri = null; // temp file URI for capture
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -222,6 +225,13 @@ public class DetailActivity extends BaseActivity {
                 new ActivityResultContracts.OpenDocument(),
                 uri -> {
                     if (uri != null) handleAttachmentPicked(uri);
+                });
+
+        // v20: Register camera capture launcher
+        cameraPicker = registerForActivityResult(
+                new ActivityResultContracts.TakePicture(),
+                success -> {
+                    if (success && cameraOutputUri != null) handleCameraCapture();
                 });
 
         // ── Build field rows ──────────────────────────────────────────────────
@@ -601,13 +611,17 @@ public class DetailActivity extends BaseActivity {
     }
 
     private void setupChecklistAddRow() {
-        // Tapping the secondary row focuses the primary add row
-        checklistAddRowSecondary.setOnClickListener(v -> {
-            etAddItem.requestFocus();
-            android.view.inputmethod.InputMethodManager imm =
-                    (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-            if (imm != null) imm.showSoftInput(etAddItem,
-                    android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+        // Tapping the secondary row — only acts if input has text (same as pressing Enter)
+        // Uses ACTION_UP on touch to prevent etAddItem losing focus before we act
+        checklistAddRowSecondary.setOnTouchListener((v, event) -> {
+            if (event.getAction() == android.view.MotionEvent.ACTION_UP) {
+                String text = etAddItem.getText().toString().trim();
+                if (!text.isEmpty()) {
+                    commitAddItem(); // commit + keep focus + keep keyboard open
+                }
+                // empty input → do nothing
+            }
+            return true; // always consume touch so etAddItem never loses focus
         });
 
         // Gain focus → activate: replace "+" with checkbox, show ✕ and secondary row
@@ -650,15 +664,17 @@ public class DetailActivity extends BaseActivity {
             ChecklistItem item = ChecklistItem.create(text);
             existingEntry.getChecklistItems().add(item);
             etAddItem.setText("");
+
+            // Grab focus + keep keyboard open BEFORE rebuild
+            // This prevents the focus-loss gap caused by removeAllViews() during re-render
+            etAddItem.requestFocus();
+            android.view.inputmethod.InputMethodManager imm =
+                    (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (imm != null) imm.showSoftInput(etAddItem,
+                    android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+
+            // Rebuild list — focus already held, no visible delay
             saveChecklistAndRefresh();
-            // Keep focus + keyboard open for continuous entry
-            etAddItem.post(() -> {
-                etAddItem.requestFocus();
-                android.view.inputmethod.InputMethodManager imm =
-                        (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-                if (imm != null) imm.showSoftInput(etAddItem,
-                        android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
-            });
         }
     }
 
@@ -1286,8 +1302,17 @@ public class DetailActivity extends BaseActivity {
 
         btnAttachOpen.setOnClickListener(v -> {
             if (isEditMode) {
-                // Launch file picker
-                attachmentPicker.launch(new String[]{"*/*"});
+                // v20: Show source picker dialog — Camera or From files
+                new MaterialAlertDialogBuilder(this)
+                        .setTitle("Add Attachment")
+                        .setItems(new String[]{"📷  Camera", "📁  From files"}, (d, which) -> {
+                            if (which == 0) {
+                                launchCamera();
+                            } else {
+                                attachmentPicker.launch(new String[]{"*/*"});
+                            }
+                        })
+                        .show();
             } else {
                 // Open existing attachment
                 openAttachment();
@@ -1357,6 +1382,101 @@ public class DetailActivity extends BaseActivity {
 
         // Remove button: only in EDIT mode when a file exists
         btnAttachRemove.setVisibility((isEditMode && hasFile) ? View.VISIBLE : View.GONE);
+    }
+
+    // v20: Camera capture ─────────────────────────────────────────────────────
+
+    /** Checks camera permission then launches the camera capture intent. */
+    private void launchCamera() {
+        if (checkSelfPermission(android.Manifest.permission.CAMERA)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{android.Manifest.permission.CAMERA}, 101);
+            return;
+        }
+        startCameraCapture();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == 101) {
+            if (grantResults.length > 0
+                    && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                startCameraCapture();
+            } else {
+                Toast.makeText(this, "Camera permission denied", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    /** Creates a temp file and launches the camera. */
+    private void startCameraCapture() {
+        try {
+            java.io.File cameraDir = new java.io.File(getCacheDir(), "camera");
+            //noinspection ResultOfMethodCallIgnored
+            cameraDir.mkdirs();
+            java.io.File photoFile = new java.io.File(cameraDir, "capture_" + System.currentTimeMillis() + ".jpg");
+            cameraOutputUri = androidx.core.content.FileProvider.getUriForFile(
+                    this, getPackageName() + ".fileprovider", photoFile);
+            cameraPicker.launch(cameraOutputUri);
+        } catch (Exception e) {
+            Toast.makeText(this, "Could not open camera", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /** Called when camera capture completes successfully — auto-compresses if needed and stores as attachment. */
+    private void handleCameraCapture() {
+        try {
+            InputStream is = getContentResolver().openInputStream(cameraOutputUri);
+            if (is == null) throw new Exception("Cannot read captured photo");
+            byte[] bytes = is.readAllBytes();
+            is.close();
+
+            // Delete the temp file immediately — no longer needed after reading bytes
+            try {
+                java.io.File tempFile = new java.io.File(cameraOutputUri.getPath());
+                if (tempFile.exists()) tempFile.delete();
+            } catch (Exception ignored) { /* best-effort cleanup */ }
+            cameraOutputUri = null;
+
+            // Auto-compress if over size limit (camera photos are always JPEG — compress well)
+            if (bytes.length > MAX_ATTACHMENT_BYTES) {
+                android.graphics.Bitmap bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+                if (bitmap == null) throw new Exception("Cannot decode photo");
+
+                int[] qualities = {80, 60, 40};
+                byte[] compressed = null;
+                for (int quality : qualities) {
+                    java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                    bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, baos);
+                    compressed = baos.toByteArray();
+                    if (compressed.length <= MAX_ATTACHMENT_BYTES) break;
+                }
+                bitmap.recycle();
+
+                if (compressed == null || compressed.length > MAX_ATTACHMENT_BYTES) {
+                    new MaterialAlertDialogBuilder(this)
+                            .setTitle("File Too Large")
+                            .setMessage(getString(R.string.file_too_large)
+                                    + "  (" + formatBytes(bytes.length) + ")")
+                            .setPositiveButton("OK", null)
+                            .show();
+                    return;
+                }
+                bytes = compressed;
+            }
+
+            String fileName = "photo_" + new java.text.SimpleDateFormat(
+                    "yyyyMMdd_HHmmss", java.util.Locale.getDefault())
+                    .format(new java.util.Date()) + ".jpg";
+
+            pendingAttachmentName = fileName;
+            pendingAttachmentData = Base64.encodeToString(bytes, Base64.NO_WRAP);
+            updateAttachmentRow();
+
+        } catch (Exception e) {
+            Toast.makeText(this, getString(R.string.attachment_open_error), Toast.LENGTH_SHORT).show();
+        }
     }
 
     /** Called when user picks a file from SAF picker. */

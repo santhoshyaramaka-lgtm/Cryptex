@@ -47,6 +47,13 @@
         <item name="colorAccent">@color/accent</item>
         <item name="android:windowBackground">@color/light_gray</item>
         <item name="materialAlertDialogTheme">@style/CryptexAlertDialog</item>
+        <item name="switchStyle">@style/CryptexSwitch</item>
+    </style>
+
+    <!-- Switch: blue when ON, grey when OFF, white thumb always -->
+    <style name="CryptexSwitch" parent="Widget.MaterialComponents.CompoundButton.Switch">
+        <item name="trackTint">@color/switch_track</item>
+        <item name="thumbTint">@color/switch_thumb</item>
     </style>
 
     <!-- Type picker tile card -->

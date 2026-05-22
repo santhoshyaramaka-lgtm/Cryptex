@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Cryptex</string>
-    <string name="app_version">Version 19.0</string>
+    <string name="app_version">Version 20.0</string>
     <string name="enter_pin">Enter PIN</string>
     <string name="set_pin">Set New PIN</string>
     <string name="confirm_pin">Confirm PIN</string>
@@ -17,7 +17,8 @@
     <string name="import_success">Imported successfully.</string>
     <string name="import_fail">Import failed. Check the file.</string>
     <string name="import_wrong_password">Wrong password or corrupted backup file.</string>
-    <string name="import_invalid_file">Invalid file. Please select a valid Cryptex backup (.msb).</string>
+    <string name="import_invalid_file">Invalid file. Please select a valid Cryptex backup (.cxb).</string>
+    <string name="import_cxb_only">Only .cxb backup files are supported.\n\nPlease select a file exported from Cryptex.</string>
     <string name="backup_password_title">Backup Password</string>
     <string name="backup_password_hint">Enter a strong password</string>
     <string name="backup_password_confirm_hint">Confirm password</string>

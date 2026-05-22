@@ -13,4 +13,8 @@
     <cache-path
         name="pdf_export"
         path="pdf_export/" />
+    <!-- v20: Camera capture temp file -->
+    <cache-path
+        name="camera_capture"
+        path="camera/" />
 </paths>
