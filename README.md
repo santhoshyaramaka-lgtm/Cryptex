@@ -9,9 +9,9 @@ A local, offline, encrypted personal vault / password manager for Android.
 - PIN lock with auto-lock timeouts and biometric (fingerprint) unlock
 - 3-wrong-attempts lockout + security question recovery (Forgot PIN)
 - Screenshot prevention (`FLAG_SECURE`) across all screens
-- Encrypted backup & restore (`.msb` — AES-256-GCM, PBKDF2 200k iterations)
-- Password-protected PDF export (AES-128, direct share sheet)
-- File attachments per entry (any type, up to 5 MB, fully encrypted in backup)
+- Encrypted backup & restore (`.cxb` — AES-256-GCM, PBKDF2 200k iterations)
+- Password-protected PDF export with category selection (AES-128, direct share sheet)
+- File attachments per entry (any type, up to 5 MB, auto-compressed for camera photos)
 - Favourites / pin-to-top with per-entry star toggle
 - **Archive entries** — hide without deleting; unarchive any time
 - **Checklists** — dedicated checklist entry type with inline add/edit/check/delete and progress indicator
@@ -21,7 +21,7 @@ A local, offline, encrypted personal vault / password manager for Android.
 - No internet permission. No cloud sync. No analytics.
 
 ## Current Version
-**v19.0** (versionCode 19) — stable
+**v20.0** (versionCode 20) — stable
 
 ## Build
 Open in Android Studio or build via Gradle:
@@ -29,7 +29,7 @@ Open in Android Studio or build via Gradle:
 .\gradlew.bat --stop
 .\gradlew.bat assembleRelease
 ```
-Release APK is auto-copied to `Cryptex_Key/Cryptex-v19.0-release.apk`.
+Release APK is auto-copied to `Cryptex_Key/Cryptex-v20.0-release.apk`.
 Keystore: `Cryptex_Key/cryptex_release.jks` | Alias: `cryptex_key`
 
 > ⚠️ Keep `minifyEnabled false` — R8 crashes when the project path contains spaces.

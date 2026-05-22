@@ -162,7 +162,10 @@
                             android:textSize="12sp" android:layout_marginTop="2dp"/>
                     </LinearLayout>
                     <Switch android:id="@+id/switchAutoBackup"
-                        android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:trackTint="@color/switch_track"
+                        android:thumbTint="@color/switch_thumb"/>
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
 
@@ -221,7 +224,10 @@
                             android:textSize="12sp" android:layout_marginTop="2dp"/>
                     </LinearLayout>
                     <Switch android:id="@+id/switchBiometric"
-                        android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:trackTint="@color/switch_track"
+                        android:thumbTint="@color/switch_thumb"/>
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
 

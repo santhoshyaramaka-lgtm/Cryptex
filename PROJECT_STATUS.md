@@ -1,9 +1,9 @@
 # Cryptex — Project Status & Handover Document
-**Last Updated:** May 19, 2026
+**Last Updated:** May 22, 2026
 **App Name:** Cryptex
-**Current Stable Version:** v19.0 (versionCode 19) — closed ✅
-**Next Version:** v20.0 (versionCode 20) — open
-**APK Location:** `Cryptex_Key/Cryptex-v19.0-release.apk` (stable)
+**Current Stable Version:** v20.0 (versionCode 20) — closed ✅
+**Next Version:** v21.0 (versionCode 21) — open
+**APK Location:** `Cryptex_Key/Cryptex-v20.0-release.apk` (stable)
 
 ---
 
@@ -504,16 +504,61 @@ After a correct PIN was entered, `goToMain()` in `PinActivity` launched `MainAct
 
 ---
 
-## 12k. V20.0 — Candidate Features
+## 12k. V20.0 — Completed Features ✅ STABLE — Closed May 22, 2026
 
-> V19.0 is closed and stable. Items below are candidates for v20.0:
+### ✨ New Features
 
-- [ ] **Password strength indicator** — Weak / Fair / Strong bar on Website / Card password fields
-- [ ] **Password generator** — generate strong random passwords directly inside Website / Card entry
-- [ ] **Custom security question** — let user type their own question instead of picking from 3
-- [ ] **Dark mode toggle** — manual override (currently follows system DayNight)
-- [ ] **Multiple attachments per entry** — currently limited to one file per entry
-- [ ] **Archived entries screen** — dedicated view to browse / restore / delete archived entries
+#### PDF Export — Category Picker
+- [x] **Category selection step** — added between warning dialog and password dialog
+- [x] **Only shows types with entries** — empty types not listed
+- [x] **Entry count per category** — e.g. `Website / App  (5)`
+- [x] **All categories checked by default** — user unchecks what they don't want
+- [x] **Empty selection guard** — if all unchecked, shows toast and keeps dialog open
+- [x] **Checklist excluded from PDF** — checklist type never appears in picker
+- [x] **Archived entries excluded** — only active entries passed to PDF
+
+#### Camera Attachment — Auto Compress
+- [x] **Silent auto-compression** — if captured photo exceeds 5 MB, automatically compressed
+- [x] **Progressive quality** — tries 80% → 60% → 40% JPEG quality until under 5 MB
+- [x] **No toast, no interruption** — photo attaches seamlessly
+- [x] **Fallback error** — only shows "File Too Large" if all compression attempts fail (extremely rare)
+- [x] **Camera temp file cleanup** — temp `.jpg` file deleted immediately after reading bytes (cache leak fix)
+
+### 🔴 Bugs Fixed
+
+| # | Bug | File |
+|---|---|---|
+| 1 | PDF category picker showed blank dialog when all active entries were checklist type | `SettingsActivity.java` |
+| 2 | Camera temp photos never deleted — silent cache storage leak | `DetailActivity.java` |
+| 3 | Star button crash — `getAdapterPosition()` returning `-1` on fast tap during list refresh | `EntryAdapter.java` |
+| 4 | Encryption fallback — silent plain text storage with no user warning | `StorageHelper.java` + `BaseActivity.java` |
+| 5 | Security answer dialog — closed with empty answer saved (validation bypassed) | `SettingsActivity.java` |
+| 6 | Change PIN dialogs — dismissed silently by tapping outside (new PIN lost) | `SettingsActivity.java` |
+| 7 | Import — backup card not refreshed after successful import | `SettingsActivity.java` |
+
+### 🟡 Performance Fixes
+
+| # | Fix | File |
+|---|---|---|
+| 1 | `SimpleDateFormat` replaced with `ThreadLocal<SimpleDateFormat>` for thread safety | `EntryAdapter.java` |
+| 2 | PDF export strips attachment Base64 data from RAM before generating — not needed in PDF | `SettingsActivity.java` |
+
+### 🔄 Backup Format Rename
+- [x] **`.msb` → `.cxb`** — backup format renamed from `.msb` (MS Backup) to `.cxb` (Cryptex Backup)
+- [x] **New exports** — always saved as `cryptex_backup.cxb`
+- [x] **Import blocks non-`.cxb` files** — clear error dialog: *"Only .cxb backup files are supported"*
+- [x] **Old `.msb` files blocked** — users must re-export from an older version if needed
+- [x] Updated: `SettingsActivity.java`, `strings.xml`, `BackupCrypto.java`, docs
+
+### 🎨 UI / UX Fixes
+- [x] **Switch toggle colours** — OFF = grey (`#CCCCCC`), ON = blue (`#2196F3`), thumb always white
+- [x] **Applied to both switches** — Auto-backup and Biometric Unlock toggles
+- [x] **Color state lists** — `color/switch_track.xml` + `color/switch_thumb.xml`
+- [x] **Security answer error** — shows inline field error instead of toast; dialog stays open
+- [x] **Change PIN** — `setCancelable(false)` on new PIN + confirm dialogs
+
+### Version Bump
+- [x] `versionCode 20`, `versionName "20.0"`, `app_version` string updated to `"Version 20.0"`
 
 ---
 
@@ -539,3 +584,4 @@ After a correct PIN was entered, `goToMain()` in `PinActivity` launched `MainAct
 | v18.0 (repo init) | May 15, 2026 | **Git repository initialised**: Stale `com/ms/app/` duplicate source folder deleted. New release keystore created (`Cryptex_Key/cryptex_release.jks`, alias `cryptex_key`). Key folder renamed `ms_Key/` → `Cryptex_Key/`. Old `ms_release.jks` deleted. `build.gradle` updated with new keystore path, alias, and auto-copy target. `local.properties` added and tracked. `.vscode/` tracked. Build verified successful. |
 | v18.0 (features) | May 18, 2026 | **Resume where you left off**: back stack preserved on auto-lock — PIN screen pushed on top, `finish()` on success resumes exact previous screen. **Search highlight**: matched text highlighted amber (`#FFE082`) + forced black text in both global and per-type search, light + dark mode safe. **Icon upgrade**: all vault door elements scaled inside Android safe zone, radial gradient background, double glow rings, gold diagonal bolts, white keyhole with teal glow, all ring paths centred correctly at `(512,512)`. `versionCode 18`, `versionName "18.0"`. |
 | v19.0 | May 19, 2026 | **Archive / Unarchive**: archive button in detail view; amber tint when archived; auto-unstar on archive; archived entries hidden from all lists and tile counts; `isArchived` field added to `Entry`, serialised in JSON + backup. **Checklist type**: new `checklist` entry type (☑️); `ChecklistItem` model (id/text/checked); `checklistItems` list on `Entry`; dedicated checklist UI in `DetailActivity` (unchecked/checked split, inline add/edit/delete, progress indicator, empty state, clear completed, share format); add-row UX (idle `+` → active checkbox+cancel+secondary row, Enter keeps keyboard, ✕ cancels); re-entrancy guard; background save race fix (`saveEntriesJson` API on `StorageHelper`); back-press safety. `versionCode 19`, `versionName "19.0"`. |
+| v20.0 | May 22, 2026 | **Camera attachment** (photo or file), **sort dialog** (Date/Name, direction toggle, per-type persistence), **archive toggle in top bar** (3 states), **checklist add row tap fix**, bug fixes, `versionCode 20`, `versionName "20.0"`. |

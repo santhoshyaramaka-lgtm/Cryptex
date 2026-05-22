@@ -13,7 +13,7 @@ import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
 
 /**
- * AES-256-GCM encryption / decryption for Cryptex backup files (.msb).
+ * AES-256-GCM encryption / decryption for Cryptex backup files (.cxb).
  *
  * Binary file format:
  *   [4  bytes] Magic header: 'M','S','B','K'
@@ -41,7 +41,7 @@ public class BackupCrypto {
 
     /**
      * Encrypts a JSON string with the given password.
-     * @return raw .msb file bytes ready to write to disk
+     * @return raw .cxb file bytes ready to write to disk
      */
     public static byte[] encrypt(String plaintext, String password) throws Exception {
         SecureRandom rng  = new SecureRandom();
@@ -68,7 +68,7 @@ public class BackupCrypto {
     // ── Decrypt ──────────────────────────────────────────────────────────────
 
     /**
-     * Decrypts raw .msb file bytes with the given password.
+     * Decrypts raw .cxb file bytes with the given password.
      * @return the decrypted JSON string
      * @throws WrongPasswordException if the auth tag fails (wrong password or corrupted file)
      * @throws InvalidFileException   if the magic header is not recognised

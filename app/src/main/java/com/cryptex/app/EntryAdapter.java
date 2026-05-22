@@ -170,7 +170,9 @@ public class EntryAdapter extends RecyclerView.Adapter<EntryAdapter.ViewHolder> 
                 entry.setPinnedAt(nowFav ? System.currentTimeMillis() : 0);
                 storage.saveEntries(allEntries);
                 storage.setBackupPending(true);
-                notifyItemChanged(holder.getAdapterPosition());
+                // Guard: getAdapterPosition() returns -1 if item was removed while animating
+                int pos = holder.getAdapterPosition();
+                if (pos != -1 && pos < getItemCount()) notifyItemChanged(pos);
                 if (onFavouriteChanged != null) onFavouriteChanged.run();
             });
             holder.ivCheck.setVisibility(View.GONE);
@@ -224,10 +226,13 @@ public class EntryAdapter extends RecyclerView.Adapter<EntryAdapter.ViewHolder> 
     }
 
     // ── Timestamp formatter ───────────────────────────────────────────────────
-    // Static cached formatters — created once, reused for every bind call.
-    private static final SimpleDateFormat FMT_TIME     = new SimpleDateFormat("HH:mm",    Locale.getDefault());
-    private static final SimpleDateFormat FMT_DAY_MON  = new SimpleDateFormat("d MMM",    Locale.getDefault());
-    private static final SimpleDateFormat FMT_FULL     = new SimpleDateFormat("d MMM yy", Locale.getDefault());
+    // ThreadLocal formatters — each thread gets its own instance (SimpleDateFormat is not thread-safe)
+    private static final ThreadLocal<SimpleDateFormat> FMT_TIME =
+            ThreadLocal.withInitial(() -> new SimpleDateFormat("HH:mm",    Locale.getDefault()));
+    private static final ThreadLocal<SimpleDateFormat> FMT_DAY_MON =
+            ThreadLocal.withInitial(() -> new SimpleDateFormat("d MMM",    Locale.getDefault()));
+    private static final ThreadLocal<SimpleDateFormat> FMT_FULL =
+            ThreadLocal.withInitial(() -> new SimpleDateFormat("d MMM yy", Locale.getDefault()));
 
     private String formatTimestamp(long millis) {
         Calendar now   = Calendar.getInstance();
@@ -240,11 +245,11 @@ public class EntryAdapter extends RecyclerView.Adapter<EntryAdapter.ViewHolder> 
 
         Date date = new Date(millis);
         if (isToday) {
-            return FMT_TIME.format(date);
+            return FMT_TIME.get().format(date);
         } else if (thisYear) {
-            return FMT_DAY_MON.format(date);
+            return FMT_DAY_MON.get().format(date);
         } else {
-            return FMT_FULL.format(date);
+            return FMT_FULL.get().format(date);
         }
     }
 }

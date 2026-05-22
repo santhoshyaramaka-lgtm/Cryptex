@@ -44,7 +44,7 @@ public class SettingsActivity extends BaseActivity {
     // Pending password — held between password dialog and SAF picker callback
     private String pendingExportPassword = null;
 
-    // SAF launcher: full export — user picks location, filename pre-set to cryptex_backup.msb
+    // SAF launcher: full export — user picks location, filename pre-set to cryptex_backup.cxb
     private final ActivityResultLauncher<Intent> exportFilePicker =
             registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
                 if (result.getResultCode() == RESULT_OK && result.getData() != null) {
@@ -74,7 +74,25 @@ public class SettingsActivity extends BaseActivity {
 
     private final ActivityResultLauncher<String[]> importFilePicker =
             registerForActivityResult(new ActivityResultContracts.OpenDocument(), uri -> {
-                if (uri != null) showImportPasswordDialog(uri);
+                if (uri == null) return;
+                // Only accept .cxb backup files
+                String fileName = "";
+                android.database.Cursor cursor = getContentResolver().query(
+                        uri, null, null, null, null);
+                if (cursor != null && cursor.moveToFirst()) {
+                    int idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+                    if (idx >= 0) fileName = cursor.getString(idx);
+                    cursor.close();
+                }
+                if (!fileName.toLowerCase().endsWith(".cxb")) {
+                    new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                            .setTitle("Unsupported File")
+                            .setMessage(getString(R.string.import_cxb_only))
+                            .setPositiveButton("OK", null)
+                            .show();
+                    return;
+                }
+                showImportPasswordDialog(uri);
             });
 
     @Override
@@ -214,10 +232,10 @@ public class SettingsActivity extends BaseActivity {
             exportDialog.dismiss();
             // Store password for later re-use by Update Backup
             pendingExportPassword = pass;
-            // Open SAF picker — fixed filename cryptex_backup.msb
+            // Open SAF picker — fixed filename cryptex_backup.cxb
             Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
             intent.setType("application/octet-stream");
-            intent.putExtra(Intent.EXTRA_TITLE, "cryptex_backup.msb");
+            intent.putExtra(Intent.EXTRA_TITLE, "cryptex_backup.cxb");
             exportFilePicker.launch(intent);
         });
     }
@@ -359,6 +377,7 @@ public class SettingsActivity extends BaseActivity {
                 runOnUiThread(() -> {
                     progress.dismiss();
                     Toast.makeText(this, getString(R.string.import_success), Toast.LENGTH_SHORT).show();
+                    updateBackupCard(); // refresh Update Backup card visibility after import
                 });
 
             } catch (BackupCrypto.WrongPasswordException e) {
@@ -466,20 +485,25 @@ public class SettingsActivity extends BaseActivity {
         EditText et = new EditText(this);
         et.setHint(R.string.security_answer_hint);
         layout.addView(et);
-        new MaterialAlertDialogBuilder(this)
+
+        AlertDialog dlg = new MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.security_question)
                 .setView(layout)
-                .setPositiveButton(R.string.save, (d, w) -> {
-                    String ans = et.getText().toString().trim();
-                    if (ans.isEmpty()) {
-                        Toast.makeText(this, R.string.security_answer_empty, Toast.LENGTH_SHORT).show();
-                        return;
-                    }
-                    storage.setSecurityQuestion(qIndex, ans);
-                    updateSecurityQValue();
-                })
+                .setPositiveButton(R.string.save, null) // null — handled below to prevent auto-dismiss
                 .setNegativeButton(R.string.cancel, null)
-                .show();
+                .create();
+        dlg.show();
+        // Override positive button so dialog only closes when answer is valid
+        dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String ans = et.getText().toString().trim();
+            if (ans.isEmpty()) {
+                et.setError(getString(R.string.security_answer_empty));
+                return; // dialog stays open
+            }
+            storage.setSecurityQuestion(qIndex, ans);
+            updateSecurityQValue();
+            dlg.dismiss();
+        });
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -564,6 +588,7 @@ public class SettingsActivity extends BaseActivity {
                 .setTitle("Change PIN")
                 .setMessage("Enter your new PIN")
                 .setView(etNew)
+                .setCancelable(false)
                 .setPositiveButton("Next", (d, w) -> {
                     String newPin = etNew.getText().toString().trim();
                     if (newPin.length() == 4) {
@@ -582,6 +607,7 @@ public class SettingsActivity extends BaseActivity {
                 .setTitle("Change PIN")
                 .setMessage("Confirm your new PIN")
                 .setView(etConfirm)
+                .setCancelable(false)
                 .setPositiveButton("Save", (d, w) -> {
                     String confirmed = etConfirm.getText().toString().trim();
                     if (confirmed.equals(newPin)) {
@@ -625,17 +651,87 @@ public class SettingsActivity extends BaseActivity {
     // ── v17: PDF Export ───────────────────────────────────────────────────────
 
     private void showPdfExportWarning() {
-        List<Entry> entries = storage.loadEntries();
-        if (entries.isEmpty()) {
+        List<Entry> allEntries = storage.loadEntries();
+        // Exclude archived entries from PDF export
+        // Also strip attachment data — PDF never uses it, no point holding it in RAM
+        List<Entry> activeEntries = new java.util.ArrayList<>();
+        for (Entry e : allEntries) {
+            if (!e.isArchived()) {
+                e.setAttachmentData(""); // strip Base64 blob — not needed for PDF
+                activeEntries.add(e);
+            }
+        }
+        if (activeEntries.isEmpty()) {
             Toast.makeText(this, getString(R.string.pdf_no_entries), Toast.LENGTH_SHORT).show();
             return;
         }
         new MaterialAlertDialogBuilder(this)
                 .setTitle(getString(R.string.export_pdf))
                 .setMessage(getString(R.string.export_pdf_warning))
-                .setPositiveButton("Continue →", (d, w) -> showPdfPasswordDialog(entries))
+                .setPositiveButton("Continue →", (d, w) -> showPdfCategoryPicker(activeEntries))
                 .setNegativeButton(getString(R.string.cancel), null)
                 .show();
+    }
+
+    private void showPdfCategoryPicker(List<Entry> activeEntries) {
+        // Only show types that have at least one active entry
+        final String[] allTypes = {
+                EntryType.WEBSITE, EntryType.CARD, EntryType.BANK,
+                EntryType.PERSONAL, EntryType.PIN, EntryType.NOTE
+        };
+
+        // Build list of types that actually have entries (excludes checklist — not in PDF)
+        final java.util.List<String> availableTypes = new java.util.ArrayList<>();
+        for (String t : allTypes) {
+            for (Entry e : activeEntries) {
+                if (t.equals(e.getType())) { availableTypes.add(t); break; }
+            }
+        }
+
+        // Edge case: all active entries are checklist type (not exported in PDF)
+        if (availableTypes.isEmpty()) {
+            Toast.makeText(this, getString(R.string.pdf_no_entries), Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Build display labels with entry counts
+        final CharSequence[] labels = new CharSequence[availableTypes.size()];
+        for (int i = 0; i < availableTypes.size(); i++) {
+            String t = availableTypes.get(i);
+            int count = 0;
+            for (Entry e : activeEntries) if (t.equals(e.getType())) count++;
+            labels[i] = EntryType.getDisplayName(t) + "  (" + count + ")";
+        }
+
+        // All checked by default
+        final boolean[] checked = new boolean[availableTypes.size()];
+        java.util.Arrays.fill(checked, true);
+
+        AlertDialog dlg = new MaterialAlertDialogBuilder(this)
+                .setTitle("Select Categories")
+                .setMultiChoiceItems(labels, checked, (d, which, isChecked) -> checked[which] = isChecked)
+                .setPositiveButton("Next →", null)
+                .setNegativeButton(getString(R.string.cancel), null)
+                .create();
+
+        dlg.show();
+
+        dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            // Build filtered entry list based on selected categories
+            List<Entry> filtered = new java.util.ArrayList<>();
+            for (int i = 0; i < availableTypes.size(); i++) {
+                if (checked[i]) {
+                    String t = availableTypes.get(i);
+                    for (Entry e : activeEntries) if (t.equals(e.getType())) filtered.add(e);
+                }
+            }
+            if (filtered.isEmpty()) {
+                Toast.makeText(this, "Please select at least one category.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            dlg.dismiss();
+            showPdfPasswordDialog(filtered);
+        });
     }
 
     private void showPdfPasswordDialog(List<Entry> entries) {

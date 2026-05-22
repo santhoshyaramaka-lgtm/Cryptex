@@ -83,10 +83,27 @@ public abstract class BaseActivity extends AppCompatActivity {
         }
     };
 
+    private boolean encryptionWarningShown = false; // show at most once per session
+
     @Override
     protected void onResume() {
         super.onResume();
         if (baseStorage == null) baseStorage = new StorageHelper(this);
+
+        // Warn user if encrypted storage failed to initialise
+        if (baseStorage.isEncryptionFailed() && !encryptionWarningShown
+                && !(this instanceof PinActivity)) {
+            encryptionWarningShown = true;
+            new androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("⚠️ Security Warning")
+                    .setMessage("Encrypted storage could not be initialised on this device. "
+                            + "Your data is currently stored without encryption.\n\n"
+                            + "This may be caused by a corrupted Android Keystore. "
+                            + "Try restarting your device.")
+                    .setPositiveButton("OK", null)
+                    .setCancelable(false)
+                    .show();
+        }
         IntentFilter filter = new IntentFilter(Intent.ACTION_SCREEN_OFF);
         registerReceiver(screenOffReceiver, filter);
 
