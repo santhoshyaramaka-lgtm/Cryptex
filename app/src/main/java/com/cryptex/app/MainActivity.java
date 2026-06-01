@@ -34,6 +34,10 @@ public class MainActivity extends BaseActivity {
     private RecyclerView     rvSearchResults;
     private EditText         etSearch;
 
+    // Cache the last-rendered tile counts so we only rebuild tiles when
+    // something actually changed — avoids unnecessary XML inflation on every resume
+    private java.util.Map<String, Integer> lastTileCounts = null;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -41,7 +45,7 @@ public class MainActivity extends BaseActivity {
                 android.view.WindowManager.LayoutParams.FLAG_SECURE);
         setContentView(R.layout.activity_main);
 
-        storage       = new StorageHelper(this);
+        storage       = StorageHelper.getInstance(this);
         allEntries    = new ArrayList<>();
         searchResults = new ArrayList<>();
 
@@ -97,6 +101,8 @@ public class MainActivity extends BaseActivity {
     protected void onResume() {
         super.onResume();
         if (checkAndHandleAutoLock()) return;
+        // One-time migration: uppercase all existing entry titles
+        storage.migrateTitlesToCaps();
         // Reload entries so tile counts are fresh after add/edit/delete
         allEntries.clear();
         allEntries.addAll(storage.loadEntries());
@@ -111,12 +117,7 @@ public class MainActivity extends BaseActivity {
     // ── Tile Grid ─────────────────────────────────────────────────────────────
 
     private void buildTileGrid() {
-        tileGrid.removeAllViews();
-
-        int screenWidth = getResources().getDisplayMetrics().widthPixels;
-        int tileWidth   = (screenWidth / 2);   // 2 columns, full width split
-
-        // Pre-compute counts in a single O(n) pass — avoids O(n×types) inner loops
+        // Pre-compute counts in a single O(n) pass
         java.util.Map<String, Integer> counts = new java.util.HashMap<>();
         for (String type : EntryType.ALL_TYPES) counts.put(type, 0);
         for (Entry e : allEntries) {
@@ -124,6 +125,15 @@ public class MainActivity extends BaseActivity {
             // v19: exclude archived entries from tile counts
             if (c != null && !e.isArchived()) counts.put(e.getType(), c + 1);
         }
+
+        // Skip full rebuild if counts are identical to last render — Bug 4 fix
+        if (counts.equals(lastTileCounts)) return;
+        lastTileCounts = counts;
+
+        tileGrid.removeAllViews();
+
+        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+        int tileWidth   = (screenWidth / 2);   // 2 columns, full width split
 
         for (String type : EntryType.ALL_TYPES) {
             int count = counts.getOrDefault(type, 0);

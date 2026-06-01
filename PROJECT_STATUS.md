@@ -1,9 +1,9 @@
 # Cryptex — Project Status & Handover Document
-**Last Updated:** May 22, 2026
+**Last Updated:** May 25, 2026
 **App Name:** Cryptex
-**Current Stable Version:** v20.0 (versionCode 20) — closed ✅
-**Next Version:** v21.0 (versionCode 21) — open
-**APK Location:** `Cryptex_Key/Cryptex-v20.0-release.apk` (stable)
+**Current Stable Version:** v21.0 (versionCode 21) — closed ✅
+**Next Version:** v22.0 (versionCode 22) — open
+**APK Location:** `Cryptex_Key/Cryptex-v21.0-release.apk` (stable)
 
 ---
 
@@ -562,6 +562,22 @@ After a correct PIN was entered, `goToMain()` in `PinActivity` launched `MainAct
 
 ---
 
+## 12l. V21.0 — Completed Features ✅ STABLE — Closed May 25, 2026
+
+### 🔴 Bug Fixed
+
+#### Attachment Viewer — Stale Cache (Wrong File Shown)
+- **Issue:** Opening Entry 1's attachment, then opening Entry 2's attachment always showed Entry 1's file.
+- **Root Cause:** Both entries wrote their attachment to the same path `cache/attachments/<filename>`. If two entries had attachments with the same filename (e.g. `photo.jpg`), they shared an identical `FileProvider` URI. External viewer apps (image viewers, PDF readers) cache content by URI — so they always served the first entry's cached file.
+- **Fix:** Each entry now writes its attachment to a unique per-entry subdirectory: `cache/attachments/<entryId>/<filename>`. Every entry has a distinct URI — no collision, no stale cache.
+- **Files changed:** `DetailActivity.java` (`openAttachment()` and `shareEntry()`)
+- **Also fixed in share flow** — the same collision existed when sharing an entry with an attachment.
+
+### Version Bump
+- [x] `versionCode 21`, `versionName "21.0"`
+
+---
+
 ## 13. Version History
 
 | Version | Date | Key Features Added |
@@ -585,3 +601,4 @@ After a correct PIN was entered, `goToMain()` in `PinActivity` launched `MainAct
 | v18.0 (features) | May 18, 2026 | **Resume where you left off**: back stack preserved on auto-lock — PIN screen pushed on top, `finish()` on success resumes exact previous screen. **Search highlight**: matched text highlighted amber (`#FFE082`) + forced black text in both global and per-type search, light + dark mode safe. **Icon upgrade**: all vault door elements scaled inside Android safe zone, radial gradient background, double glow rings, gold diagonal bolts, white keyhole with teal glow, all ring paths centred correctly at `(512,512)`. `versionCode 18`, `versionName "18.0"`. |
 | v19.0 | May 19, 2026 | **Archive / Unarchive**: archive button in detail view; amber tint when archived; auto-unstar on archive; archived entries hidden from all lists and tile counts; `isArchived` field added to `Entry`, serialised in JSON + backup. **Checklist type**: new `checklist` entry type (☑️); `ChecklistItem` model (id/text/checked); `checklistItems` list on `Entry`; dedicated checklist UI in `DetailActivity` (unchecked/checked split, inline add/edit/delete, progress indicator, empty state, clear completed, share format); add-row UX (idle `+` → active checkbox+cancel+secondary row, Enter keeps keyboard, ✕ cancels); re-entrancy guard; background save race fix (`saveEntriesJson` API on `StorageHelper`); back-press safety. `versionCode 19`, `versionName "19.0"`. |
 | v20.0 | May 22, 2026 | **Camera attachment** (photo or file), **sort dialog** (Date/Name, direction toggle, per-type persistence), **archive toggle in top bar** (3 states), **checklist add row tap fix**, bug fixes, `versionCode 20`, `versionName "20.0"`. |
+| v21.0 | May 25, 2026 | **Attachment viewer bug fix** — opening a second entry's attachment always showed the first entry's file (stale URI cache in external viewer apps). Fixed by writing each entry's cached attachment into a unique per-entry subdirectory (`cache/attachments/<entryId>/filename`) so every entry has a distinct `FileProvider` URI. Same fix applied to the share flow. `versionCode 21`, `versionName "21.0"`. |

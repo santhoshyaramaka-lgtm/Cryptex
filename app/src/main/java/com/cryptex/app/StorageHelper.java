@@ -15,6 +15,24 @@ import java.util.UUID;
 
 public class StorageHelper {
 
+    // ── Singleton ─────────────────────────────────────────────────────────────
+    // EncryptedSharedPreferences.create() performs AES-256 GCM key derivation
+    // via Android Keystore — a slow hardware IPC operation (~100–300 ms).
+    // Using a singleton ensures this is done exactly once per app process,
+    // not once per activity creation.
+    private static volatile StorageHelper instance;
+
+    public static StorageHelper getInstance(Context context) {
+        if (instance == null) {
+            synchronized (StorageHelper.class) {
+                if (instance == null) {
+                    instance = new StorageHelper(context.getApplicationContext());
+                }
+            }
+        }
+        return instance;
+    }
+
     private static final String PREFS_NAME  = "ms_secure_prefs";
     private static final String KEY_ENTRIES = "entries";
     private static final String KEY_PIN     = "pin";
@@ -46,6 +64,39 @@ public class StorageHelper {
 
     /** Returns true if encrypted storage could not be initialised. */
     public boolean isEncryptionFailed() { return encryptionFailed; }
+
+    // ── One-time migrations ───────────────────────────────────────────────────
+
+    private static final String KEY_MIGRATION_TITLE_CAPS = "migration_title_caps_done";
+
+    /**
+     * One-time migration: uppercase the title (field1) of every existing entry.
+     * Runs once on the first launch after this version is installed, then never again.
+     * Call this from the singleton constructor or from MainActivity.onResume()
+     * before loadEntries() is used to populate the UI.
+     */
+    public void migrateTitlesToCaps() {
+        if (prefs.getBoolean(KEY_MIGRATION_TITLE_CAPS, false)) return; // already done
+        try {
+            List<Entry> entries = loadEntries();
+            boolean changed = false;
+            for (Entry e : entries) {
+                String title = e.getField1();
+                if (title != null && !title.isEmpty()) {
+                    String upper = title.toUpperCase();
+                    if (!upper.equals(title)) {
+                        e.setFieldByIndex(1, upper);
+                        changed = true;
+                    }
+                }
+            }
+            if (changed) saveEntries(entries);
+        } catch (Exception ignored) {
+            // Never crash on migration — worst case titles stay mixed-case
+        }
+        // Mark done regardless, so we don't retry on every launch even if nothing changed
+        prefs.edit().putBoolean(KEY_MIGRATION_TITLE_CAPS, true).apply();
+    }
 
     // ── PIN ───────────────────────────────────────────────────────────────────
 

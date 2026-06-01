@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cryptex UI Preview</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
+  body { background: #1a1a2e; display: flex; gap: 32px; justify-content: center; padding: 32px; flex-wrap: wrap; }
+
+  h2 { text-align: center; color: #fff; margin-bottom: 20px; font-size: 15px; letter-spacing: 1px; text-transform: uppercase; }
+
+  /* ── PHONE SHELL ── */
+  .phone {
+    width: 320px;
+    background: #111;
+    border-radius: 40px;
+    padding: 12px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  }
+  .screen {
+    border-radius: 30px;
+    overflow: hidden;
+    height: 620px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ════════════════════════════════
+     CURRENT UI  — Black & White
+  ════════════════════════════════ */
+  .current .screen { background: #F5F5F5; }
+
+  .current .topbar {
+    background: #000000;
+    padding: 16px;
+    color: white;
+    font-size: 18px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .current .body { padding: 12px; flex: 1; overflow: hidden; }
+
+  .current .tile-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .current .tile {
+    background: #FFFFFF;
+    border-radius: 12px;
+    padding: 16px 10px;
+    text-align: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+  .current .tile .emoji { font-size: 26px; }
+  .current .tile .name  { font-size: 12px; font-weight: bold; color: #000; margin-top: 4px; }
+  .current .tile .count { font-size: 11px; color: #555; }
+
+  .current .section-label {
+    font-size: 10px; font-weight: bold; color: #555;
+    letter-spacing: 1px; text-transform: uppercase;
+    padding: 8px 4px 4px;
+  }
+  .current .card {
+    background: #FFF;
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .current .card-title { font-size: 14px; color: #000; font-weight: 500; }
+  .current .card-sub   { font-size: 11px; color: #555; margin-top: 2px; }
+  .current .chevron    { color: #00BFA5; font-size: 16px; }
+
+  /* ════════════════════════════════
+     NEW UI  — Rich Modern
+  ════════════════════════════════ */
+  .new .screen { background: #F0F4FF; }
+
+  .new .topbar {
+    background: linear-gradient(135deg, #1A237E 0%, #3949AB 60%, #00BCD4 100%);
+    padding: 16px;
+    color: white;
+    font-size: 18px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .new .topbar .subtitle { font-size: 11px; font-weight: normal; opacity: 0.8; margin-top: 2px; }
+
+  .new .body { padding: 12px; flex: 1; overflow: hidden; }
+
+  .new .tile-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .new .tile {
+    border-radius: 16px;
+    padding: 16px 10px;
+    text-align: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    position: relative;
+    overflow: hidden;
+  }
+  .new .tile::after {
+    content: '';
+    position: absolute;
+    top: -20px; right: -20px;
+    width: 60px; height: 60px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+  }
+  .new .tile.website  { background: linear-gradient(135deg, #1565C0, #42A5F5); }
+  .new .tile.card     { background: linear-gradient(135deg, #6A1B9A, #AB47BC); }
+  .new .tile.bank     { background: linear-gradient(135deg, #1B5E20, #43A047); }
+  .new .tile.personal { background: linear-gradient(135deg, #E65100, #FFA726); }
+  .new .tile.pin      { background: linear-gradient(135deg, #B71C1C, #EF5350); }
+  .new .tile.note     { background: linear-gradient(135deg, #F57F17, #FFCA28); }
+  .new .tile .emoji { font-size: 26px; }
+  .new .tile .name  { font-size: 12px; font-weight: bold; color: #fff; margin-top: 4px; }
+  .new .tile .count { font-size: 11px; color: rgba(255,255,255,0.75); }
+
+  .new .section-label {
+    font-size: 10px; font-weight: bold;
+    color: #3949AB;
+    letter-spacing: 1px; text-transform: uppercase;
+    padding: 8px 4px 4px;
+  }
+  .new .card {
+    background: #FFF;
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-bottom: 8px;
+    box-shadow: 0 2px 8px rgba(57,73,171,0.10);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-left: 4px solid #3949AB;
+  }
+  .new .card-title { font-size: 14px; color: #1A237E; font-weight: 600; }
+  .new .card-sub   { font-size: 11px; color: #888; margin-top: 2px; }
+  .new .chevron    { color: #3949AB; font-size: 16px; }
+
+  /* Entry list screen */
+  .entry-item {
+    border-radius: 14px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .current .entry-item { background: #FFF; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .new .entry-item     { background: #FFF; box-shadow: 0 2px 8px rgba(57,73,171,0.10); border-left: 3px solid #42A5F5; }
+
+  .entry-icon { font-size: 22px; }
+  .entry-info { flex: 1; }
+  .entry-title { font-size: 13px; font-weight: 600; }
+  .entry-sub   { font-size: 11px; margin-top: 2px; }
+  .current .entry-title { color: #000; }
+  .current .entry-sub   { color: #555; }
+  .new .entry-title     { color: #1A237E; }
+  .new .entry-sub       { color: #888; }
+
+  .star { font-size: 14px; }
+
+  /* tabs */
+  .tabs { display: flex; border-bottom: 1px solid #E0E0E0; margin-bottom: 12px; }
+  .tab  { flex: 1; text-align: center; padding: 8px; font-size: 11px; font-weight: bold; cursor: pointer; border-bottom: 2px solid transparent; }
+  .tab.active-tab { border-bottom-color: #000; color: #000; }
+  .new .tab.active-tab { border-bottom-color: #3949AB; color: #3949AB; }
+  .tab.inactive-tab { color: #AAA; }
+
+  .badge {
+    display: inline-block;
+    border-radius: 20px;
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: bold;
+    margin-left: 6px;
+  }
+  .current .badge { background: #EEE; color: #555; }
+  .new .badge     { background: #E8EAF6; color: #3949AB; }
+</style>
+</head>
+<body>
+
+<!-- ── CURRENT UI ── -->
+<div>
+  <h2>⬛ Current UI</h2>
+  <div class="phone current">
+    <div class="screen">
+      <div class="topbar">🔐 Cryptex</div>
+      <div class="body">
+        <div class="tabs">
+          <div class="tab active-tab">Home</div>
+          <div class="tab inactive-tab">Search</div>
+        </div>
+        <div class="tile-grid">
+          <div class="tile"><div class="emoji">🌐</div><div class="name">Website</div><div class="count">12 entries</div></div>
+          <div class="tile"><div class="emoji">💳</div><div class="name">Card</div><div class="count">4 entries</div></div>
+          <div class="tile"><div class="emoji">🏦</div><div class="name">Bank</div><div class="count">3 entries</div></div>
+          <div class="tile"><div class="emoji">👤</div><div class="name">Personal</div><div class="count">2 entries</div></div>
+          <div class="tile"><div class="emoji">🔐</div><div class="name">PIN</div><div class="count">5 entries</div></div>
+          <div class="tile"><div class="emoji">📝</div><div class="name">Note</div><div class="count">7 entries</div></div>
+        </div>
+        <div class="section-label">Recent</div>
+        <div class="entry-item">
+          <div class="entry-icon">🌐</div>
+          <div class="entry-info">
+            <div class="entry-title">Gmail</div>
+            <div class="entry-sub">john@gmail.com</div>
+          </div>
+          <div class="star">⭐</div>
+        </div>
+        <div class="entry-item">
+          <div class="entry-icon">💳</div>
+          <div class="entry-info">
+            <div class="entry-title">HDFC Credit Card</div>
+            <div class="entry-sub">Visa •••• 4242</div>
+          </div>
+          <div class="star">☆</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── NEW UI ── -->
+<div>
+  <h2>✨ New Rich UI</h2>
+  <div class="phone new">
+    <div class="screen">
+      <div class="topbar">
+        <div>
+          <div>🔐 Cryptex</div>
+          <div class="subtitle">33 entries secured</div>
+        </div>
+      </div>
+      <div class="body">
+        <div class="tabs">
+          <div class="tab active-tab">Home</div>
+          <div class="tab inactive-tab">Search</div>
+        </div>
+        <div class="tile-grid">
+          <div class="tile website"><div class="emoji">🌐</div><div class="name">Website</div><div class="count">12 entries</div></div>
+          <div class="tile card"><div class="emoji">💳</div><div class="name">Card</div><div class="count">4 entries</div></div>
+          <div class="tile bank"><div class="emoji">🏦</div><div class="name">Bank</div><div class="count">3 entries</div></div>
+          <div class="tile personal"><div class="emoji">👤</div><div class="name">Personal</div><div class="count">2 entries</div></div>
+          <div class="tile pin"><div class="emoji">🔐</div><div class="name">PIN</div><div class="count">5 entries</div></div>
+          <div class="tile note"><div class="emoji">📝</div><div class="name">Note</div><div class="count">7 entries</div></div>
+        </div>
+        <div class="section-label">Recent</div>
+        <div class="entry-item">
+          <div class="entry-icon">🌐</div>
+          <div class="entry-info">
+            <div class="entry-title">Gmail</div>
+            <div class="entry-sub">john@gmail.com</div>
+          </div>
+          <div class="star">⭐</div>
+        </div>
+        <div class="entry-item">
+          <div class="entry-icon">💳</div>
+          <div class="entry-info">
+            <div class="entry-title">HDFC Credit Card</div>
+            <div class="entry-sub">Visa •••• 4242</div>
+          </div>
+          <div class="star">☆</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── SETTINGS PREVIEW ── -->
+<div>
+  <h2>⚙️ Settings — New UI</h2>
+  <div class="phone new">
+    <div class="screen">
+      <div class="topbar">← Settings</div>
+      <div class="body">
+        <div class="section-label">Backup &amp; Data</div>
+        <div class="card">
+          <div><div class="card-title">📥 Import Backup</div><div class="card-sub">Restore from .cxb file</div></div>
+          <div class="chevron">›</div>
+        </div>
+        <div class="card">
+          <div><div class="card-title">📤 Export Backup</div><div class="card-sub">Save encrypted .cxb</div></div>
+          <div class="chevron">›</div>
+        </div>
+        <div class="card">
+          <div><div class="card-title">📄 Export as PDF</div><div class="card-sub">Password-protected PDF</div></div>
+          <div class="chevron">›</div>
+        </div>
+        <div class="section-label">Security</div>
+        <div class="card">
+          <div><div class="card-title">⏱ Auto Lock</div><div class="card-sub">1 minute</div></div>
+          <div class="chevron">›</div>
+        </div>
+        <div class="card">
+          <div><div class="card-title">🔑 Change PIN</div><div class="card-sub">Update your 4-digit PIN</div></div>
+          <div class="chevron">›</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

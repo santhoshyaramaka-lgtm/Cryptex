@@ -168,8 +168,15 @@ public class EntryAdapter extends RecyclerView.Adapter<EntryAdapter.ViewHolder> 
                 entry.setFavourite(nowFav);
                 // pinnedAt = now when starring, cleared when unstarring
                 entry.setPinnedAt(nowFav ? System.currentTimeMillis() : 0);
-                storage.saveEntries(allEntries);
-                storage.setBackupPending(true);
+                // Save in background — same pattern as checklist saveInBackground()
+                // so the star tap is instant and never freezes the UI
+                final String json = storage.exportToJson(allEntries);
+                if (json != null) {
+                    new Thread(() -> {
+                        storage.saveEntriesJson(json);
+                        storage.setBackupPending(true);
+                    }).start();
+                }
                 // Guard: getAdapterPosition() returns -1 if item was removed while animating
                 int pos = holder.getAdapterPosition();
                 if (pos != -1 && pos < getItemCount()) notifyItemChanged(pos);

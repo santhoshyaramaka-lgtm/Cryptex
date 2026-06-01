@@ -64,7 +64,7 @@ public class TypeListActivity extends BaseActivity {
         entryType = getIntent().getStringExtra("entry_type");
         if (entryType == null) entryType = EntryType.WEBSITE;
 
-        storage         = new StorageHelper(this);
+        storage         = StorageHelper.getInstance(this);
         allEntries      = new ArrayList<>();
         filteredEntries = new ArrayList<>();
 
@@ -282,8 +282,14 @@ public class TypeListActivity extends BaseActivity {
         Set<String> ids = adapter.getSelectedIds();
         allEntries.removeIf(e -> ids.contains(e.getId()));
         filteredEntries.removeIf(e -> ids.contains(e.getId()));
-        storage.saveEntries(allEntries);
-        storage.setBackupPending(true);
+        // Save in background — bulk delete should feel instant
+        final String json = storage.exportToJson(allEntries);
+        if (json != null) {
+            new Thread(() -> {
+                storage.saveEntriesJson(json);
+                storage.setBackupPending(true);
+            }).start();
+        }
         exitSelectionMode();
         adapter.notifyDataSetChanged();
         updateEmptyState();
