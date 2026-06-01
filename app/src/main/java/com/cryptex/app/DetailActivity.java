@@ -179,15 +179,18 @@ public class DetailActivity extends BaseActivity {
                     .setMessage("Delete \"" + existingEntry.getDisplayTitle() + "\"? This cannot be undone.")
                     .setPositiveButton("Delete", (d, w) -> {
                         entries.remove(existingEntry);
-                        // Save in background — delete should feel instant
+                        // Serialize on main thread, write on background, finish() AFTER write
+                        // so TypeListActivity.onResume() never reads stale data
                         final String json = storage.exportToJson(entries);
                         if (json != null) {
                             new Thread(() -> {
                                 storage.saveEntriesJson(json);
                                 storage.setBackupPending(true);
+                                runOnUiThread(() -> finish());
                             }).start();
+                        } else {
+                            finish();
                         }
-                        finish();
                     })
                     .setNegativeButton("Cancel", null)
                     .show();
@@ -218,15 +221,18 @@ public class DetailActivity extends BaseActivity {
                             existingEntry.setFavourite(false);
                             existingEntry.setPinnedAt(0);
                         }
-                        // Save in background — archive toggle should feel instant
+                        // Serialize on main thread, write on background, finish() AFTER write
+                        // so TypeListActivity.onResume() never reads stale data
                         final String json = storage.exportToJson(entries);
                         if (json != null) {
                             new Thread(() -> {
                                 storage.saveEntriesJson(json);
                                 storage.setBackupPending(true);
+                                runOnUiThread(() -> finish());
                             }).start();
+                        } else {
+                            finish();
                         }
-                        finish();
                     })
                     .setNegativeButton(getString(R.string.cancel), null)
                     .show();
@@ -595,8 +601,14 @@ public class DetailActivity extends BaseActivity {
                     newEntry.setCreatedAt(now);
                     entries.add(newEntry);
                     existingEntry = newEntry;
-                    storage.saveEntries(entries);
-                    storage.setBackupPending(true);
+                    // Save in background — UI updates from in-memory list, not from disk
+                    final String newJson = storage.exportToJson(entries);
+                    if (newJson != null) {
+                        new Thread(() -> {
+                            storage.saveEntriesJson(newJson);
+                            storage.setBackupPending(true);
+                        }).start();
+                    }
                     // Update UI
                     ((TextView) findViewById(R.id.tvScreenTitle)).setText(title);
                     btnDelete.setVisibility(View.VISIBLE);
@@ -762,11 +774,17 @@ public class DetailActivity extends BaseActivity {
         applyChecklistItemStyle(tvText, item);
         etText.setTag(item); // v20: tag so onBackPressed can find the item from the focused view
 
-        // Checkbox toggle — update model + re-render immediately, save in background
+        // Checkbox toggle — move row in-place, save in background
         cb.setOnCheckedChangeListener((btn, isChecked) -> {
             item.setChecked(isChecked);
-            renderChecklist();          // instant visual update, no disk I/O
-            saveInBackground();         // encrypted write off the UI thread
+            // If an item is being inline-edited, fall back to full rebuild to
+            // preserve the editing state; otherwise move the row in-place
+            if (checklistEditingItemId != null) {
+                renderChecklist();
+            } else {
+                toggleChecklistItemInPlace(item, rowView, isChecked);
+            }
+            saveInBackground();
         });
 
         // Tap text → mark this item as being edited and re-render.
@@ -821,6 +839,44 @@ public class DetailActivity extends BaseActivity {
         }
     }
 
+    /**
+     * Moves a checklist row in-place between the unchecked/checked containers
+     * without a full removeAllViews() rebuild. Called on checkbox tap when no
+     * item is being inline-edited. Avoids re-inflating all rows and eliminates
+     * the visual flicker caused by a full renderChecklist().
+     */
+    private void toggleChecklistItemInPlace(ChecklistItem item, android.view.View rowView, boolean isChecked) {
+        // Update visual style (strikethrough + colour) on the text view in this row
+        TextView tvText = rowView.findViewById(R.id.tvItemText);
+        applyChecklistItemStyle(tvText, item);
+
+        // Move the row to the correct container
+        android.view.ViewGroup parent = (android.view.ViewGroup) rowView.getParent();
+        if (parent != null) parent.removeView(rowView);
+
+        if (isChecked) {
+            // Checked items append to the bottom of the checked section
+            checklistCheckedItems.addView(rowView);
+        } else {
+            // Unchecked: re-insert at the position matching the model list order
+            java.util.List<ChecklistItem> items = existingEntry.getChecklistItems();
+            int insertPos = 0;
+            for (ChecklistItem ci : items) {
+                if (ci.getId().equals(item.getId())) break;
+                if (!ci.isChecked()) insertPos++;
+            }
+            checklistUncheckedItems.addView(rowView, insertPos);
+        }
+
+        // Sync divider, progress, empty state
+        java.util.List<ChecklistItem> allItems = existingEntry.getChecklistItems();
+        int checkedCount = 0;
+        for (ChecklistItem ci : allItems) if (ci.isChecked()) checkedCount++;
+        checklistDividerRow.setVisibility(checkedCount > 0 ? View.VISIBLE : View.GONE);
+        tvChecklistEmpty.setVisibility(allItems.isEmpty() ? View.VISIBLE : View.GONE);
+        updateChecklistProgress();
+    }
+
     private void updateChecklistProgress() {
         if (existingEntry == null || tvChecklistProgress == null) return;
         java.util.List<ChecklistItem> items = existingEntry.getChecklistItems();
@@ -832,11 +888,9 @@ public class DetailActivity extends BaseActivity {
     }
 
     private void saveChecklistAndRefresh() {
-        if (existingEntry != null) {
-            existingEntry.setUpdatedAt(System.currentTimeMillis());
-            storage.saveEntries(entries);
-            storage.setBackupPending(true);
-        }
+        // Use saveInBackground() — same as checkbox toggle — so text edits,
+        // inline deletes and Enter-to-save never block the UI thread
+        saveInBackground();
         renderChecklist();
     }
 

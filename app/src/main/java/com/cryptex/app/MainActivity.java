@@ -63,6 +63,7 @@ public class MainActivity extends BaseActivity {
 
         // ── Search adapter (used when searching across all types) ─────────────
         rvSearchResults.setLayoutManager(new LinearLayoutManager(this));
+        rvSearchResults.setItemAnimator(null); // disable card flicker on search result updates
         searchAdapter = new EntryAdapter(searchResults, new EntryAdapter.OnItemClickListener() {
             @Override
             public void onClick(Entry entry) {
