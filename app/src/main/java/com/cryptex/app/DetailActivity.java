@@ -127,7 +127,7 @@ public class DetailActivity extends BaseActivity {
                 android.view.WindowManager.LayoutParams.FLAG_SECURE);
         setContentView(R.layout.activity_detail);
 
-        storage = new StorageHelper(this);
+        storage = StorageHelper.getInstance(this);
         entries = storage.loadEntries();
 
         // ── Resolve entry / type ──────────────────────────────────────────────
@@ -179,8 +179,14 @@ public class DetailActivity extends BaseActivity {
                     .setMessage("Delete \"" + existingEntry.getDisplayTitle() + "\"? This cannot be undone.")
                     .setPositiveButton("Delete", (d, w) -> {
                         entries.remove(existingEntry);
-                        storage.saveEntries(entries);
-                        storage.setBackupPending(true);
+                        // Save in background — delete should feel instant
+                        final String json = storage.exportToJson(entries);
+                        if (json != null) {
+                            new Thread(() -> {
+                                storage.saveEntriesJson(json);
+                                storage.setBackupPending(true);
+                            }).start();
+                        }
                         finish();
                     })
                     .setNegativeButton("Cancel", null)
@@ -212,8 +218,14 @@ public class DetailActivity extends BaseActivity {
                             existingEntry.setFavourite(false);
                             existingEntry.setPinnedAt(0);
                         }
-                        storage.saveEntries(entries);
-                        storage.setBackupPending(true);
+                        // Save in background — archive toggle should feel instant
+                        final String json = storage.exportToJson(entries);
+                        if (json != null) {
+                            new Thread(() -> {
+                                storage.saveEntriesJson(json);
+                                storage.setBackupPending(true);
+                            }).start();
+                        }
                         finish();
                     })
                     .setNegativeButton(getString(R.string.cancel), null)
@@ -562,6 +574,8 @@ public class DetailActivity extends BaseActivity {
         etTitle.setHint("Checklist name");
         etTitle.setInputType(android.text.InputType.TYPE_CLASS_TEXT
                 | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        // Title always uppercase
+        etTitle.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.AllCaps()});
         int pad = dpToPx(16);
         etTitle.setPadding(pad, pad, pad, pad);
 
@@ -570,8 +584,8 @@ public class DetailActivity extends BaseActivity {
                 .setView(etTitle)
                 .setCancelable(false)
                 .setPositiveButton("Create", (d, w) -> {
-                    String title = etTitle.getText().toString().trim();
-                    if (title.isEmpty()) title = "Checklist";
+                    String title = etTitle.getText().toString().trim().toUpperCase();
+                    if (title.isEmpty()) title = "CHECKLIST";
                     // Create and persist the entry immediately
                     long now = System.currentTimeMillis();
                     Entry newEntry = new Entry(UUID.randomUUID().toString(),
@@ -916,6 +930,11 @@ public class DetailActivity extends BaseActivity {
             etEdit.setInputType(InputType.TYPE_CLASS_TEXT);
             etEdit.setSingleLine(true);
         }
+        // Title field (index 0 = field1) is always stored and displayed in ALL CAPS.
+        // AllCaps filter auto-uppercases every keystroke so the user sees it immediately.
+        if (index == 0) {
+            etEdit.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.AllCaps()});
+        }
         etEdit.setVisibility(View.GONE);   // hidden until EDIT mode
         editViews[index] = etEdit;
         row.addView(etEdit);
@@ -1010,14 +1029,20 @@ public class DetailActivity extends BaseActivity {
             existingEntry.setType(entryType);
             for (int i = 0; i < 7; i++) {
                 if (editViews[i] != null) {
-                    existingEntry.setFieldByIndex(i + 1, editViews[i].getText().toString().trim());
+                    String val = editViews[i].getText().toString().trim();
+                    // Title (field1, index 0) is always stored in ALL CAPS — safety net
+                    if (i == 0) val = val.toUpperCase();
+                    existingEntry.setFieldByIndex(i + 1, val);
                 }
             }
             existingEntry.setUpdatedAt(System.currentTimeMillis()); // v8: track last modified
         } else {
             String[] vals = new String[7];
             for (int i = 0; i < 7; i++) {
-                vals[i] = (editViews[i] != null) ? editViews[i].getText().toString().trim() : "";
+                String val = (editViews[i] != null) ? editViews[i].getText().toString().trim() : "";
+                // Title (field1, index 0) is always stored in ALL CAPS — safety net
+                if (i == 0) val = val.toUpperCase();
+                vals[i] = val;
             }
             Entry newEntry = new Entry(UUID.randomUUID().toString(), entryType,
                     vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], vals[6]);
@@ -1199,7 +1224,11 @@ public class DetailActivity extends BaseActivity {
         //     Drive     → two files uploaded
         // ─────────────────────────────────────────────────────────────────────
         try {
-            File cacheDir = new File(getCacheDir(), "attachments");
+            // Use an entry-specific subdirectory so two entries whose attachment
+            // or text file share the same filename never collide on disk.
+            String entryId = (existingEntry != null && existingEntry.getId() != null)
+                    ? existingEntry.getId() : "pending";
+            File cacheDir = new File(getCacheDir(), "attachments/" + entryId);
             //noinspection ResultOfMethodCallIgnored
             cacheDir.mkdirs();
 
@@ -1330,8 +1359,14 @@ public class DetailActivity extends BaseActivity {
                             if (existingEntry != null) {
                                 existingEntry.setAttachmentName("");
                                 existingEntry.setAttachmentData("");
-                                storage.saveEntries(entries);
-                                storage.setBackupPending(true);
+                                // Save in background — remove should feel instant
+                                final String json = storage.exportToJson(entries);
+                                if (json != null) {
+                                    new Thread(() -> {
+                                        storage.saveEntriesJson(json);
+                                        storage.setBackupPending(true);
+                                    }).start();
+                                }
                             }
                             // Also clear any in-flight pending so the row reflects reality
                             pendingAttachmentName = null;
@@ -1532,9 +1567,16 @@ public class DetailActivity extends BaseActivity {
         if (name.isEmpty() || data.isEmpty()) return;
 
         try {
-            // Decode and write to cache
+            // Decode and write to cache.
+            // Each entry gets its own subdirectory keyed by entry ID so that
+            // two entries with attachments sharing the same filename never
+            // collide on disk — without this, viewer apps cache by URI and
+            // always show the first entry's file even when opening a different entry.
             byte[] bytes = Base64.decode(data, Base64.NO_WRAP);
-            File cacheDir = new File(getCacheDir(), "attachments");
+            String entryId = (existingEntry != null && existingEntry.getId() != null)
+                    ? existingEntry.getId()
+                    : "pending";
+            File cacheDir = new File(getCacheDir(), "attachments/" + entryId);
             //noinspection ResultOfMethodCallIgnored
             cacheDir.mkdirs();
             File outFile = new File(cacheDir, name);
@@ -1587,15 +1629,35 @@ public class DetailActivity extends BaseActivity {
                 }
             }
 
-            // Build the final chooser intent
+            // Build the final chooser intent.
+            // FLAG_ACTIVITY_NEW_DOCUMENT | FLAG_ACTIVITY_MULTIPLE_TASK is the
+            // correct combination for opening a file as a fresh document every time:
+            //
+            //  - FLAG_ACTIVITY_NEW_DOCUMENT  → tells Android to treat each unique URI
+            //    as a separate document task. This is the API designed specifically for
+            //    "open this file" use cases and works even when the viewer app declares
+            //    launchMode="singleTask" in its own manifest (which Adobe Reader,
+            //    Google PDF viewer, and most image viewers do). FLAG_ACTIVITY_NEW_TASK
+            //    alone is resisted by singleTask apps; FLAG_ACTIVITY_NEW_DOCUMENT is not.
+            //
+            //  - FLAG_ACTIVITY_MULTIPLE_TASK → allows Android to create multiple
+            //    concurrent tasks for the same viewer app (one per document URI),
+            //    so test1.pdf and test2.pdf each get their own independent task.
+            //
+            // Result: opening Entry 2's attachment while Entry 1's viewer is still open
+            // always shows Entry 2's file in a fresh viewer, never the stale cached one.
             final String finalMime = mime;
             Intent viewIntent = new Intent(Intent.ACTION_VIEW);
             viewIntent.setDataAndType(fileUri, finalMime);
-            viewIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            viewIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    | Intent.FLAG_ACTIVITY_NEW_DOCUMENT
+                    | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
             viewIntent.setClipData(ClipData.newRawUri("attachment", fileUri));
 
             Intent chooserIntent = Intent.createChooser(viewIntent, "Open with");
-            chooserIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            chooserIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    | Intent.FLAG_ACTIVITY_NEW_DOCUMENT
+                    | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
 
             if (appNames.isEmpty()) {
                 // No apps found — tell user what type of app they need

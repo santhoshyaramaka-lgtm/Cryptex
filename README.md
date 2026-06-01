@@ -21,7 +21,7 @@ A local, offline, encrypted personal vault / password manager for Android.
 - No internet permission. No cloud sync. No analytics.
 
 ## Current Version
-**v20.0** (versionCode 20) — stable
+**v21.0** (versionCode 21) — stable
 
 ## Build
 Open in Android Studio or build via Gradle:
@@ -29,7 +29,7 @@ Open in Android Studio or build via Gradle:
 .\gradlew.bat --stop
 .\gradlew.bat assembleRelease
 ```
-Release APK is auto-copied to `Cryptex_Key/Cryptex-v20.0-release.apk`.
+Release APK is auto-copied to `Cryptex_Key/Cryptex-v21.0-release.apk`.
 Keystore: `Cryptex_Key/cryptex_release.jks` | Alias: `cryptex_key`
 
 > ⚠️ Keep `minifyEnabled false` — R8 crashes when the project path contains spaces.

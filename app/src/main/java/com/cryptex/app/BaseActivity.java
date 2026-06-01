@@ -51,7 +51,7 @@ public abstract class BaseActivity extends AppCompatActivity {
      */
     protected boolean checkAndHandleAutoLock() {
         if (this instanceof PinActivity) return false;
-        if (baseStorage == null) baseStorage = new StorageHelper(this);
+        if (baseStorage == null) baseStorage = StorageHelper.getInstance(this);
         boolean forcedLock = baseStorage.isForcedLock();
         int  timeout = baseStorage.getAutoLockTimeout();
         long last    = baseStorage.getBackgroundTimestamp();
@@ -88,7 +88,7 @@ public abstract class BaseActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (baseStorage == null) baseStorage = new StorageHelper(this);
+        if (baseStorage == null) baseStorage = StorageHelper.getInstance(this);
 
         // Warn user if encrypted storage failed to initialise
         if (baseStorage.isEncryptionFailed() && !encryptionWarningShown
@@ -173,7 +173,7 @@ public abstract class BaseActivity extends AppCompatActivity {
      */
     private void triggerAutoBackup() {
         if (this instanceof PinActivity) return;
-        if (baseStorage == null) baseStorage = new StorageHelper(this);
+        if (baseStorage == null) baseStorage = StorageHelper.getInstance(this);
 
         if (!baseStorage.isAutoBackupEnabled()) return;
         if (!baseStorage.isBackupPending())     return;

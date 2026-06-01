@@ -102,7 +102,7 @@ public class SettingsActivity extends BaseActivity {
                 android.view.WindowManager.LayoutParams.FLAG_SECURE);
         setContentView(R.layout.activity_settings);
 
-        storage = new StorageHelper(this);
+        storage = StorageHelper.getInstance(this);
 
         findViewById(R.id.btnBack).setOnClickListener(v -> finish());
         findViewById(R.id.cardChangePin).setOnClickListener(v -> showCurrentPinDialog());
