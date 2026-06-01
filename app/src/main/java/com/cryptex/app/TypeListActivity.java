@@ -111,6 +111,7 @@ public class TypeListActivity extends BaseActivity {
         // ── RecyclerView ──────────────────────────────────────────────────────
         RecyclerView recyclerView = findViewById(R.id.recyclerView);
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
+        recyclerView.setItemAnimator(null); // disable card flicker on every filter/sort/star update
 
         adapter = new EntryAdapter(filteredEntries, new EntryAdapter.OnItemClickListener() {
             @Override

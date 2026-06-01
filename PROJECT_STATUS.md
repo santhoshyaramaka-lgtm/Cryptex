@@ -1,8 +1,7 @@
 # Cryptex — Project Status & Handover Document
 **Last Updated:** May 25, 2026
 **App Name:** Cryptex
-**Current Stable Version:** v21.0 (versionCode 21) — closed ✅
-**Next Version:** v22.0 (versionCode 22) — open
+**Current Stable Version:** v22.0 (versionCode 22) — open
 **APK Location:** `Cryptex_Key/Cryptex-v21.0-release.apk` (stable)
 
 ---
