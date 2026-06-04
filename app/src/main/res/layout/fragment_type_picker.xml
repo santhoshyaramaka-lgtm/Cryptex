@@ -27,7 +27,7 @@
         android:paddingTop="8dp"
         android:paddingBottom="16dp"/>
 
-    <!-- Row 1: Website / App  +  Card -->
+    <!-- Row 1: Website  +  Card -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -44,7 +44,7 @@
             android:layout_weight="1"
             android:layout_marginEnd="8dp">
             <TextView android:id="@+id/tvWebsiteEmoji" style="@style/TileEmoji" android:text="🌐"/>
-            <TextView android:id="@+id/tvWebsiteLabel" style="@style/TileLabel" android:text="Website / App"/>
+            <TextView android:id="@+id/tvWebsiteLabel" style="@style/TileLabel" android:text="Website"/>
         </LinearLayout>
 
         <LinearLayout

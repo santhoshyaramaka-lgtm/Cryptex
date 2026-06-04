@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Cryptex</string>
-    <string name="app_version">Version 22.0</string>
+    <string name="app_version">Version 23.0</string>
     <string name="enter_pin">Enter PIN</string>
     <string name="set_pin">Set New PIN</string>
     <string name="confirm_pin">Confirm PIN</string>
