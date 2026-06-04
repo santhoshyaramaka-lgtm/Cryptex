@@ -22,7 +22,7 @@ public class EntryType {
     // ── Display Names ─────────────────────────────────────────────────────────
     public static String getDisplayName(String type) {
         switch (type) {
-            case WEBSITE:  return "Website / App";
+            case WEBSITE:  return "Website";
             case CARD:     return "Card";
             case BANK:     return "Bank Details";
             case PERSONAL: return "Personal Info";
