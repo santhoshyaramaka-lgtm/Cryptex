@@ -1,8 +1,8 @@
 # Cryptex — Project Status & Handover Document
-**Last Updated:** May 25, 2026
+**Last Updated:** June 5, 2026
 **App Name:** Cryptex
 **Current Stable Version:** v24.0 (versionCode 24) — open
-**APK Location:** `Cryptex_Key/Cryptex-v21.0-release.apk` (stable)
+**APK Location:** `Cryptex_Key/Cryptex-v24.0-release.apk` (stable)
 
 ---
 
@@ -66,8 +66,8 @@ Cryptex/
 | `compileSdk` | 34 |
 | `minSdk` | 23 |
 | `targetSdk` | 34 |
-| `versionCode` | 19 |
-| `versionName` | "19.0" |
+| `versionCode` | 24 |
+| `versionName` | "24.0" |
 | `minifyEnabled` | **false** (must stay false — see note) |
 | Keystore | `Cryptex_Key/cryptex_release.jks` |
 | Key alias | `cryptex_key` |
@@ -577,6 +577,69 @@ After a correct PIN was entered, `goToMain()` in `PinActivity` launched `MainAct
 
 ---
 
+## 12m. V22.0 — Completed Features ✅ STABLE — Closed June 1, 2026
+
+### Background-Thread Save Refactor
+- [x] **Serialize on main thread, write on background** — JSON serialization done on main thread before handing off to background write; `finish()` called only after the disk write completes, eliminating stale-read races where the next screen loaded before the write finished
+- [x] **`toggleChecklistItemInPlace()`** — replaces full `renderChecklist()` rebuild when a checkbox is toggled; updates only the affected row in-place → zero flicker on checkbox tap
+- [x] **`saveInBackground()` for checklist** — checklist checkbox toggles use the background-thread save path (same as other saves)
+
+### RecyclerView Flicker Fix
+- [x] **Item animator disabled** — `MainActivity` and `TypeListActivity` call `setItemAnimator(null)` on their `RecyclerView`s; prevents the default fade/translate animation that caused cards to visually flash when the list was refreshed after a save
+
+### Version Bump
+- [x] `versionCode 22`, `versionName "22.0"`, `app_version` string updated to `"Version 22.0"`
+
+---
+
+## 12n. V23.0 — Completed Features ✅ STABLE — Closed June 4, 2026
+
+### Label Standardisation
+- [x] **"Website / App" → "Website"** — `EntryType.getDisplayName()` updated; matching text in `fragment_filter.xml` and `fragment_type_picker.xml` updated to keep all displayed labels consistent
+
+### Version Bump
+- [x] `versionCode 23`, `versionName "23.0"`, `app_version` string updated to `"Version 23.0"`
+
+---
+
+## 12o. V24.0 — Completed Features ✅ STABLE — Closed June 5, 2026
+
+### Multi-Attachment Support
+- [x] **`Attachment` model** (`Attachment.java`) — `id` (UUID), `entryId`, `filename`, `mimeType`, `sizeBytes`; factory `create(entryId, filename, mimeType, size)`
+- [x] **`AttachmentStore`** (`AttachmentStore.java`) — manages attachment `.enc` files using Android Keystore + `EncryptedFile`; APIs: `save()`, `read()`, `delete()`, `deleteAll(entryId)`, `listForEntry(entryId)`, `totalSize(entryId)`
+- [x] **`DetailActivity` reworked** — full attachment section replaces old single-attachment row:
+  - Multiple `item_attachment_row.xml` rows (filename, size, open, share, remove per row)
+  - Async add via file picker or camera (size validated before writing)
+  - Async open/share via `FileProvider` temp decrypted cache file
+  - Per-entry size limit enforced; pending-write state shown while attachment is being saved
+  - Attachments cleaned up (`AttachmentStore.deleteAll()`) on entry delete and on archive
+  - Attachment writes/deletes committed atomically during save
+- [x] **`item_attachment_row.xml`** — new layout: filename + size text | open button | share button | remove button
+- [x] **Entry model** (`Entry.java`) — `attachmentName`/`attachmentData` Base64 fields removed; replaced with lightweight `List<String> attachmentIds` (just UUIDs referencing `AttachmentStore`)
+- [x] **`StorageHelper`** updated — serializes/deserializes `attachmentIds` list; backward-compatible (old `attachmentName`/`attachmentData` keys ignored on import)
+
+### Backup Format v2 (ZIP `.cxb`)
+- [x] **ZIP-based backup** — `BackupCrypto` upgraded to ZIP format: one `entries.json` entry + one `.enc` blob per attachment, all in a single `.cxb` ZIP archive
+- [x] **Single PBKDF2 key** — same AES-256-GCM / PBKDF2 (200 k iterations) key derivation; each attachment blob has its own random IV
+- [x] **`BaseActivity` export** — `doAutoBackup()` collects all `AttachmentStore` blobs and passes them into the ZIP export
+- [x] **Import** — reads `entries.json` from ZIP, restores attachment blobs into `AttachmentStore`; backward-compatible with v1 `.cxb` (no attachments ZIP entry)
+- [x] **`SettingsActivity`** — export/import flows updated for ZIP format; error messages distinguish v1 vs v2 backup
+
+### App Icon Redesign (Chrome C + Vault Door)
+- [x] **Background** (`ic_launcher_background.xml`) — flat `#D8DCDF` grey (replaces dark gradient)
+- [x] **Foreground** (`ic_launcher_foreground.xml`) — vault door (outer ring r=310, door face radial gradient `#546E7A→#37474F→#263238`, inner accent ring r=209, teal glow strokes `#00BCD4`/`#00ACC1`) + Chrome C lettermark
+- [x] **Georgia Bold C glyph** — exact path extracted from `georgiab.ttf` via `fontTools` (UPM 2048, scale 0.249); fills interior of vault door with chrome linear gradient (`#707070→#FFFFFF→#D0D0D0→#888888`) and drop shadow
+- [x] **4 gold cardinal bolts** — `#FFD700` fill, `#FF8F00` stroke, at top/bottom/left/right of ring
+- [x] **Keyhole in C gap** — stroke-only white circle + slot rect positioned in the open gap of the C
+
+### PIN Screen Icon
+- [x] **App icon on lock screen** — 88 dp `ImageView` (`@mipmap/ic_launcher`) added above "Enter PIN" title in `activity_pin.xml`; `layout_marginBottom="20dp"`, centred horizontally
+
+### Version Bump
+- [x] `versionCode 24`, `versionName "24.0"`, `app_version` string updated to `"Version 24.0"`
+
+---
+
 ## 13. Version History
 
 | Version | Date | Key Features Added |
@@ -601,3 +664,6 @@ After a correct PIN was entered, `goToMain()` in `PinActivity` launched `MainAct
 | v19.0 | May 19, 2026 | **Archive / Unarchive**: archive button in detail view; amber tint when archived; auto-unstar on archive; archived entries hidden from all lists and tile counts; `isArchived` field added to `Entry`, serialised in JSON + backup. **Checklist type**: new `checklist` entry type (☑️); `ChecklistItem` model (id/text/checked); `checklistItems` list on `Entry`; dedicated checklist UI in `DetailActivity` (unchecked/checked split, inline add/edit/delete, progress indicator, empty state, clear completed, share format); add-row UX (idle `+` → active checkbox+cancel+secondary row, Enter keeps keyboard, ✕ cancels); re-entrancy guard; background save race fix (`saveEntriesJson` API on `StorageHelper`); back-press safety. `versionCode 19`, `versionName "19.0"`. |
 | v20.0 | May 22, 2026 | **Camera attachment** (photo or file), **sort dialog** (Date/Name, direction toggle, per-type persistence), **archive toggle in top bar** (3 states), **checklist add row tap fix**, bug fixes, `versionCode 20`, `versionName "20.0"`. |
 | v21.0 | May 25, 2026 | **Attachment viewer bug fix** — opening a second entry's attachment always showed the first entry's file (stale URI cache in external viewer apps). Fixed by writing each entry's cached attachment into a unique per-entry subdirectory (`cache/attachments/<entryId>/filename`) so every entry has a distinct `FileProvider` URI. Same fix applied to the share flow. `versionCode 21`, `versionName "21.0"`. |
+| v22.0 | Jun 1, 2026 | **Background-thread save refactor** — serialize JSON on main thread, write on background thread; `finish()` runs only after disk write completes (eliminates stale-read race). **Checklist flicker fix** — `toggleChecklistItemInPlace()` replaces full `renderChecklist()` rebuild on checkbox toggle. **RecyclerView animator disabled** — `MainActivity` and `TypeListActivity` set `setItemAnimator(null)` to prevent card flash on list refresh. `versionCode 22`, `versionName "22.0"`. |
+| v23.0 | Jun 4, 2026 | **Label standardisation** — "Website / App" renamed to "Website" in `EntryType.getDisplayName()`, filter sheet, and type picker sheet. `versionCode 23`, `versionName "23.0"`. |
+| v24.0 | Jun 5, 2026 | **Multi-attachment support** — `Attachment` model + `AttachmentStore` (Android Keystore `EncryptedFile`, per-attachment `.enc` files); `DetailActivity` reworked for multiple attachments (async add/open/share/remove, size limits, pending state, cleanup on delete/archive). **Backup v2 ZIP `.cxb`** — ZIP-format backup with `entries.json` + per-attachment blobs, single PBKDF2 key, backward-compatible import. **App icon redesign** — Chrome C lettermark (Georgia Bold glyph, chrome gradient) over vault door on `#D8DCDF` grey background; 4 gold cardinal bolts, teal accent rings, keyhole in C gap. **PIN screen icon** — 88 dp app icon displayed above "Enter PIN" title on `PinActivity`. `versionCode 24`, `versionName "24.0"`. |
