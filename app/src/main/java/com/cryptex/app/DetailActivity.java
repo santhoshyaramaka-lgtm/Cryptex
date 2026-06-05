@@ -10,19 +10,19 @@ import android.content.pm.ResolveInfo;
 import android.net.Uri;
 import android.os.Bundle;
 import android.text.InputType;
-import android.util.Base64;
 import android.view.Gravity;
 import android.view.View;
-import android.webkit.MimeTypeMap;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.FileProvider;
 
@@ -32,7 +32,9 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -77,22 +79,24 @@ public class DetailActivity extends BaseActivity {
     // v9: Unsaved-changes action bar
     private LinearLayout saveActionBar;
 
-    // v9: Attachment state
-    private static final long MAX_ATTACHMENT_BYTES  = 5 * 1024 * 1024; // 5 MB
-    private static final long WARN_ATTACHMENT_BYTES = 3 * 1024 * 1024; // 3 MB warn threshold
-    private String pendingAttachmentName = null; // null = no change pending
-    private String pendingAttachmentData = null; // null = no change pending
+    // v24: Attachment state (replaces single pendingAttachmentName/Data from v9)
+    private static final int  MAX_ATTACHMENT_COUNT  = 5;
+    private static final long MAX_TOTAL_BYTES       = 100L * 1024 * 1024; // 100 MB total (5 × 20 MB)
+    private static final long MAX_SINGLE_BYTES      =  20L * 1024 * 1024; // 20 MB per file
+    private AttachmentStore attachmentStore;
+    // Files the user has added in this edit session but not yet saved
+    private final List<PendingAttachment> pendingAdds = new ArrayList<>();
+    // IDs of existing saved attachments the user has removed in this edit session
+    private final Set<String> pendingRemovals = new HashSet<>();
 
     // v12: Clipboard auto-clear
     private static final long CLIPBOARD_CLEAR_DELAY_MS = 30_000; // 30 seconds
     private final android.os.Handler clipboardHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     private Runnable clipboardClearRunnable = null;
 
-    // v9: Attachment row views — cached once in setupAttachmentRow()
-    private TextView    tvAttachmentName;
-    private ImageButton btnAttachOpen;
-    private ImageButton btnAttachRemove;
-    private TextView    tvAttachmentWarning;
+    // v24: Attachment section views — bound in setupAttachmentSection()
+    private LinearLayout attachmentListContainer;
+    private TextView     btnAddAttachment;
 
     // v12: Created date label shown in VIEW mode
     private TextView    tvCreatedAt;
@@ -129,6 +133,7 @@ public class DetailActivity extends BaseActivity {
 
         storage = StorageHelper.getInstance(this);
         entries = storage.loadEntries();
+        attachmentStore = new AttachmentStore(this); // v24
 
         // ── Resolve entry / type ──────────────────────────────────────────────
         String entryId = getIntent().getStringExtra("entry_id");
@@ -164,8 +169,8 @@ public class DetailActivity extends BaseActivity {
                 saveActionBar.setVisibility(View.GONE));
         findViewById(R.id.btnBarDiscard).setOnClickListener(v -> {
             saveActionBar.setVisibility(View.GONE);
-            pendingAttachmentName = null;
-            pendingAttachmentData = null;
+            pendingAdds.clear();     // v24: discard any un-saved picks — files not written yet
+            pendingRemovals.clear(); // v24: discard removals — files not deleted yet
             finish();
         });
 
@@ -179,17 +184,24 @@ public class DetailActivity extends BaseActivity {
                     .setMessage("Delete \"" + existingEntry.getDisplayTitle() + "\"? This cannot be undone.")
                     .setPositiveButton("Delete", (d, w) -> {
                         entries.remove(existingEntry);
+                        // v24: delete attachment files before removing entry
+                        final List<Attachment> attachmentsToDelete =
+                                new ArrayList<>(existingEntry.getAttachments());
                         // Serialize on main thread, write on background, finish() AFTER write
                         // so TypeListActivity.onResume() never reads stale data
                         final String json = storage.exportToJson(entries);
                         if (json != null) {
                             new Thread(() -> {
+                                attachmentStore.deleteAll(attachmentsToDelete); // v24
                                 storage.saveEntriesJson(json);
                                 storage.setBackupPending(true);
                                 runOnUiThread(() -> finish());
                             }).start();
                         } else {
-                            finish();
+                            new Thread(() -> {
+                                attachmentStore.deleteAll(attachmentsToDelete); // v24
+                                runOnUiThread(() -> finish());
+                            }).start();
                         }
                     })
                     .setNegativeButton("Cancel", null)
@@ -221,17 +233,28 @@ public class DetailActivity extends BaseActivity {
                             existingEntry.setFavourite(false);
                             existingEntry.setPinnedAt(0);
                         }
+                        // v24: if archiving, delete attachment files (archived entries cannot be opened)
+                        final List<Attachment> attachmentsToDelete = nowArchived
+                                ? new ArrayList<>(existingEntry.getAttachments())
+                                : java.util.Collections.emptyList();
+                        if (nowArchived) existingEntry.setAttachments(new ArrayList<>());
                         // Serialize on main thread, write on background, finish() AFTER write
                         // so TypeListActivity.onResume() never reads stale data
                         final String json = storage.exportToJson(entries);
                         if (json != null) {
                             new Thread(() -> {
+                                if (!attachmentsToDelete.isEmpty())
+                                    attachmentStore.deleteAll(attachmentsToDelete);
                                 storage.saveEntriesJson(json);
                                 storage.setBackupPending(true);
                                 runOnUiThread(() -> finish());
                             }).start();
                         } else {
-                            finish();
+                            new Thread(() -> {
+                                if (!attachmentsToDelete.isEmpty())
+                                    attachmentStore.deleteAll(attachmentsToDelete);
+                                runOnUiThread(() -> finish());
+                            }).start();
                         }
                     })
                     .setNegativeButton(getString(R.string.cancel), null)
@@ -335,8 +358,8 @@ public class DetailActivity extends BaseActivity {
 
         applyModeUI();
 
-        // v9: Setup attachment row
-        setupAttachmentRow();
+        // v24: Setup attachment section (replaces v9 setupAttachmentRow)
+        setupAttachmentSection();
     }
 
     // ── Mode switching ────────────────────────────────────────────────────────
@@ -360,7 +383,7 @@ public class DetailActivity extends BaseActivity {
             }
         }
         applyModeUI();
-        updateAttachmentRow(); // v9: refresh attachment row icons for edit mode
+        renderAttachmentList(); // v24: refresh attachment list for edit mode
     }
 
     private void applyModeUI() {
@@ -513,8 +536,8 @@ public class DetailActivity extends BaseActivity {
 
     /** Returns true if any edit field differs from the stored entry value. */
     private boolean hasUnsavedChanges() {
-        // RC2 fix: a pending attachment change is also an unsaved change
-        if (pendingAttachmentName != null) return true;
+        // v24: pending attachment adds or removals are unsaved changes
+        if (!pendingAdds.isEmpty() || !pendingRemovals.isEmpty()) return true;
 
         if (existingEntry == null) {
             // New entry: any non-empty field = unsaved change
@@ -1107,34 +1130,77 @@ public class DetailActivity extends BaseActivity {
             existingEntry = newEntry;   // assign so attachment block below can reference it
         }
 
-        // v9: persist pending attachment changes
-        if (pendingAttachmentName != null) {
-            existingEntry.setAttachmentName(pendingAttachmentName);
-            existingEntry.setAttachmentData(pendingAttachmentData != null ? pendingAttachmentData : "");
+        // v24: persist pending attachment changes
+        // Write new files via AttachmentStore, delete removed files
+        final List<Attachment> currentAttachments = existingEntry != null
+                ? new ArrayList<>(existingEntry.getAttachments()) : new ArrayList<>();
+        // Remove flagged removals from the list that will be stored
+        currentAttachments.removeIf(a -> pendingRemovals.contains(a.getId()));
+        existingEntry.setAttachments(currentAttachments);
+        // Capture pending state before clearing for background thread
+        final List<PendingAttachment> toWrite = new ArrayList<>(pendingAdds);
+        final Set<String> toDelete = new HashSet<>(pendingRemovals);
+        pendingAdds.clear();
+        pendingRemovals.clear();
+
+        final String json = storage.exportToJson(entries);
+
+        // Fast path: no attachment file I/O needed — save synchronously on the main thread
+        // and finish immediately. This matches v23 behaviour and avoids any potential
+        // memory-visibility issue with EncryptedSharedPreferences.apply() called from a
+        // background thread (main-thread reads may not see background-thread writes instantly).
+        if (toWrite.isEmpty() && toDelete.isEmpty()) {
+            if (json != null) {
+                storage.saveEntriesJson(json);
+                storage.setBackupPending(true);
+            }
+            finish();
+            return;
         }
 
-        storage.saveEntries(entries);
-        storage.setBackupPending(true);
-
-        // Go straight to list — no VIEW mode stop
-        pendingAttachmentName = null;
-        pendingAttachmentData = null;
-        finish();
+        // Slow path: there are attachment files to write/delete — use a background thread
+        // for file I/O, then do the final entry save + finish on the UI thread.
+        new Thread(() -> {
+            // Write new attachment files
+            List<Attachment> written = new ArrayList<>();
+            for (PendingAttachment pa : toWrite) {
+                try {
+                    Attachment saved = attachmentStore.save(pa.bytes, pa.name, pa.mimeType);
+                    written.add(saved);
+                } catch (Exception e) {
+                    // If a file fails to write, skip it silently — entry still saves
+                }
+            }
+            // Delete removed files
+            for (String id : toDelete) {
+                attachmentStore.delete(id);
+            }
+            // Add newly written attachments to the entry and re-serialize
+            runOnUiThread(() -> {
+                if (!written.isEmpty()) {
+                    existingEntry.getAttachments().addAll(written);
+                }
+                final String json2 = storage.exportToJson(entries);
+                if (json2 != null) {
+                    storage.saveEntriesJson(json2);
+                    storage.setBackupPending(true);
+                }
+                finish();
+            });
+        }).start();
     }
 
     /**
      * Shows the share confirmation dialog.
-     * - No attachment → simple Yes/No confirm.
-     * - Has attachment → same dialog + a pre-checked "Include attachment" checkbox
-     *   showing the filename so the user can opt out before sharing.
+     * v24: For entries with multiple attachments, lists all attachment filenames.
      */
     private void showShareDialog() {
-        String attName = pendingAttachmentName != null ? pendingAttachmentName
-                : (existingEntry != null ? existingEntry.getAttachmentName() : "");
-        boolean hasAttachment = !attName.isEmpty();
+        // Build effective attachment list: saved – removals + pending adds
+        List<Attachment> savedAtts = existingEntry != null
+                ? existingEntry.getAttachments() : new ArrayList<>();
+        boolean hasAttachment = !savedAtts.isEmpty() || !pendingAdds.isEmpty();
 
         if (!hasAttachment) {
-            // Simple confirm — no attachment involved
             new MaterialAlertDialogBuilder(this)
                     .setTitle("Share Entry")
                     .setMessage("This will share your data as plain text.\n\nAre you sure?")
@@ -1144,7 +1210,17 @@ public class DetailActivity extends BaseActivity {
             return;
         }
 
-        // Build a small custom view: message text + checkbox + filename
+        // Build file list description
+        StringBuilder fileList = new StringBuilder();
+        for (Attachment a : savedAtts) {
+            if (!pendingRemovals.contains(a.getId())) {
+                fileList.append("\u2022 ").append(a.getName()).append("\n");
+            }
+        }
+        for (PendingAttachment pa : pendingAdds) {
+            fileList.append("\u2022 ").append(pa.name).append(" (unsaved)\n");
+        }
+
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         int ph = dpToPx(24);
@@ -1157,28 +1233,25 @@ public class DetailActivity extends BaseActivity {
         msg.setTextColor(getResources().getColor(R.color.text_primary));
         layout.addView(msg);
 
-        // Spacer
         View spacer = new View(this);
         spacer.setLayoutParams(new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(16)));
         layout.addView(spacer);
 
-        // Checkbox row
         CheckBox chk = new CheckBox(this);
-        chk.setText("Include attachment");
-        chk.setChecked(true);   // default ON — user expects file to come along
+        chk.setText("Include attachments");
+        chk.setChecked(true);
         chk.setTextSize(15f);
         chk.setTextColor(getResources().getColor(R.color.text_primary));
         layout.addView(chk);
 
-        // Filename label below checkbox (slightly indented, secondary colour)
         TextView tvFile = new TextView(this);
         LinearLayout.LayoutParams fileParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
         fileParams.leftMargin = dpToPx(32);
         tvFile.setLayoutParams(fileParams);
-        tvFile.setText(attName);
+        tvFile.setText(fileList.toString().trim());
         tvFile.setTextSize(12f);
         tvFile.setTextColor(getResources().getColor(R.color.text_secondary));
         layout.addView(tvFile);
@@ -1243,99 +1316,103 @@ public class DetailActivity extends BaseActivity {
             return;
         }
 
-        // Resolve attachment — pending (unsaved pick) takes priority over saved
-        String attName = pendingAttachmentName != null ? pendingAttachmentName
-                : (existingEntry != null ? existingEntry.getAttachmentName() : "");
-        String attData = pendingAttachmentData != null ? pendingAttachmentData
-                : (existingEntry != null ? existingEntry.getAttachmentData() : "");
-
-        boolean shouldAttach = !attName.isEmpty() && !attData.isEmpty();
-
-        if (!shouldAttach) {
-            // withAttachment=true but no actual file data — text only
+        // ── v24: Build effective attachment list (saved - removals + pending adds) ──
+        List<Attachment> savedAtts = existingEntry != null
+                ? existingEntry.getAttachments() : new ArrayList<>();
+        boolean anyFiles = !savedAtts.isEmpty() || !pendingAdds.isEmpty();
+        if (!anyFiles) {
             startActivity(Intent.createChooser(
                     buildTextOnlyShareIntent(shareText), "Share via"));
             return;
         }
 
-        // ── Text + Attachment — ACTION_SEND_MULTIPLE with TWO files ───────────
-        //
-        // WHY this approach:
-        //   ACTION_SEND with EXTRA_TEXT + EXTRA_STREAM is unreliable —
-        //   receiving apps treat MIME as the signal: if MIME is a file type
-        //   they ignore EXTRA_TEXT; if MIME is text/plain they ignore EXTRA_STREAM.
-        //   There is no single intent that reliably delivers both on all apps.
-        //
-        //   The ONLY approach that works everywhere is ACTION_SEND_MULTIPLE
-        //   with two FileProvider URIs:
-        //     URI 1 → entry_info.txt  (the formatted text written as a file)
-        //     URI 2 → the actual attachment file
-        //
-        //   Every app (Gmail, WhatsApp, Telegram, Drive) handles two-file share:
-        //     Gmail     → subject line + two email attachments
-        //     WhatsApp  → two files sent in sequence
-        //     Telegram  → two files sent together
-        //     Drive     → two files uploaded
-        // ─────────────────────────────────────────────────────────────────────
-        try {
-            // Use an entry-specific subdirectory so two entries whose attachment
-            // or text file share the same filename never collide on disk.
-            String entryId = (existingEntry != null && existingEntry.getId() != null)
-                    ? existingEntry.getId() : "pending";
-            File cacheDir = new File(getCacheDir(), "attachments/" + entryId);
-            //noinspection ResultOfMethodCallIgnored
-            cacheDir.mkdirs();
+        // ── Text + Attachment(s) — read files on background thread ────────────
+        // Attachments can be up to 100 MB total; reading on the UI thread risks ANR.
+        final String finalShareText = shareText;
+        final String entryId = (existingEntry != null && existingEntry.getId() != null)
+                ? existingEntry.getId() : "pending";
+        final String entryTitle = existingEntry != null ? existingEntry.getDisplayTitle() : "";
+        final List<Attachment> savedAttsSnapshot = new ArrayList<>(savedAtts);
+        final Set<String> removalsSnapshot = new HashSet<>(pendingRemovals);
+        final List<PendingAttachment> addsSnapshot = new ArrayList<>(pendingAdds);
 
-            // ── File 1: write the entry text as a .txt file ───────────────────
-            String txtFileName = (existingEntry != null
-                    ? existingEntry.getDisplayTitle()
-                            .replaceAll("[^a-zA-Z0-9_\\-]", "_")
-                    : "entry") + ".txt";
-            File txtFile = new File(cacheDir, txtFileName);
-            try (FileOutputStream fos = new FileOutputStream(txtFile)) {
-                fos.write(shareText.getBytes("UTF-8"));
+        ProgressBar pb = new ProgressBar(this);
+        pb.setIndeterminate(true);
+        int pad = Math.round(24 * getResources().getDisplayMetrics().density);
+        pb.setPadding(pad, pad, pad, pad);
+        AlertDialog progress = new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle("Preparing share...")
+                .setView(pb)
+                .setCancelable(false)
+                .create();
+        progress.show();
+
+        new Thread(() -> {
+            try {
+                File cacheDir = new File(getCacheDir(), "attachments/" + entryId);
+                //noinspection ResultOfMethodCallIgnored
+                cacheDir.mkdirs();
+
+                // File 1: entry text as .txt
+                String txtFileName = entryTitle.replaceAll("[^a-zA-Z0-9_\\-]", "_");
+                if (txtFileName.isEmpty()) txtFileName = "entry";
+                File txtFile = new File(cacheDir, txtFileName + ".txt");
+                try (FileOutputStream fos = new FileOutputStream(txtFile)) {
+                    fos.write(finalShareText.getBytes("UTF-8"));
+                }
+                Uri txtUri = FileProvider.getUriForFile(DetailActivity.this,
+                        getPackageName() + ".fileprovider", txtFile);
+
+                java.util.ArrayList<Uri> uris = new java.util.ArrayList<>();
+                uris.add(txtUri);
+
+                // Files 2+: saved attachments (decrypt from AttachmentStore)
+                for (Attachment a : savedAttsSnapshot) {
+                    if (removalsSnapshot.contains(a.getId())) continue;
+                    try {
+                        byte[] bytes = attachmentStore.read(a.getId());
+                        File attFile = new File(cacheDir, a.getName());
+                        try (FileOutputStream fos = new FileOutputStream(attFile)) { fos.write(bytes); }
+                        uris.add(FileProvider.getUriForFile(DetailActivity.this,
+                                getPackageName() + ".fileprovider", attFile));
+                    } catch (Exception ignored) { /* skip unreadable file */ }
+                }
+                // Pending adds (bytes already in memory)
+                for (PendingAttachment pa : addsSnapshot) {
+                    try {
+                        File attFile = new File(cacheDir, pa.name);
+                        try (FileOutputStream fos = new FileOutputStream(attFile)) { fos.write(pa.bytes); }
+                        uris.add(FileProvider.getUriForFile(DetailActivity.this,
+                                getPackageName() + ".fileprovider", attFile));
+                    } catch (Exception ignored) { /* skip */ }
+                }
+
+                Intent shareIntent = new Intent(Intent.ACTION_SEND_MULTIPLE);
+                shareIntent.setType("*/*");
+                shareIntent.putExtra(Intent.EXTRA_SUBJECT, entryTitle);
+                shareIntent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
+                ClipData clip = ClipData.newRawUri("", uris.get(0));
+                for (int i = 1; i < uris.size(); i++) clip.addItem(new ClipData.Item(uris.get(i)));
+                shareIntent.setClipData(clip);
+                shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                Intent chooser = Intent.createChooser(shareIntent, "Share via");
+                chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+                runOnUiThread(() -> {
+                    progress.dismiss();
+                    startActivity(chooser);
+                });
+
+            } catch (Exception e) {
+                runOnUiThread(() -> {
+                    progress.dismiss();
+                    Toast.makeText(DetailActivity.this,
+                            "Could not attach file — sharing text only.", Toast.LENGTH_SHORT).show();
+                    startActivity(Intent.createChooser(
+                            buildTextOnlyShareIntent(finalShareText), "Share via"));
+                });
             }
-            Uri txtUri = FileProvider.getUriForFile(this,
-                    getPackageName() + ".fileprovider", txtFile);
-
-            // ── File 2: decode and write the attachment ───────────────────────
-            byte[] attBytes = Base64.decode(attData, Base64.NO_WRAP);
-            File attFile = new File(cacheDir, attName);
-            try (FileOutputStream fos = new FileOutputStream(attFile)) {
-                fos.write(attBytes);
-            }
-            Uri attUri = FileProvider.getUriForFile(this,
-                    getPackageName() + ".fileprovider", attFile);
-
-            // ── Build ACTION_SEND_MULTIPLE with both URIs ─────────────────────
-            java.util.ArrayList<Uri> uris = new java.util.ArrayList<>();
-            uris.add(txtUri);   // text info first
-            uris.add(attUri);   // actual attachment second
-
-            Intent shareIntent = new Intent(Intent.ACTION_SEND_MULTIPLE);
-            shareIntent.setType("*/*");
-            shareIntent.putExtra(Intent.EXTRA_SUBJECT,
-                    existingEntry != null ? existingEntry.getDisplayTitle() : "");
-            shareIntent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
-
-            // Grant read permission for both URIs via ClipData
-            ClipData clip = ClipData.newRawUri("", txtUri);
-            clip.addItem(new ClipData.Item(attUri));
-            shareIntent.setClipData(clip);
-            shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-
-            Intent chooser = Intent.createChooser(shareIntent, "Share via");
-            chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            startActivity(chooser);
-
-        } catch (Exception e) {
-            // Any failure — fall back to text-only gracefully
-            Toast.makeText(this,
-                    "Could not attach file — sharing text only.",
-                    Toast.LENGTH_SHORT).show();
-            startActivity(Intent.createChooser(
-                    buildTextOnlyShareIntent(shareText), "Share via"));
-        }
+        }).start();
     }
 
     /** Builds a plain-text only share intent. */
@@ -1367,110 +1444,152 @@ public class DetailActivity extends BaseActivity {
         return Math.round(dp * getResources().getDisplayMetrics().density);
     }
 
-    // ── v9: Attachment ────────────────────────────────────────────────────────
+    // ── v24: Attachment section ───────────────────────────────────────────────
 
-    /** Initial setup of attachment row — caches views and binds click handlers. */
-    private void setupAttachmentRow() {
-        // v20: checklist has no attachment
-        if (EntryType.CHECKLIST.equals(entryType)) {
-            View attachmentRow = findViewById(R.id.attachmentRow);
-            if (attachmentRow != null) attachmentRow.setVisibility(View.GONE);
-            return;
-        }
-        // Cache views once — avoids repeated findViewById on every updateAttachmentRow() call
-        tvAttachmentName    = findViewById(R.id.tvAttachmentName);
-        btnAttachOpen       = findViewById(R.id.btnAttachOpen);
-        btnAttachRemove     = findViewById(R.id.btnAttachRemove);
-        tvAttachmentWarning = findViewById(R.id.tvAttachmentWarning);
+    /** Initial setup of attachment section — binds container and Add button. */
+    private void setupAttachmentSection() {
+        // v20: checklist has no attachment section
+        if (EntryType.CHECKLIST.equals(entryType)) return;
 
-        btnAttachOpen.setOnClickListener(v -> {
-            if (isEditMode) {
-                // v20: Show source picker dialog — Camera or From files
-                new MaterialAlertDialogBuilder(this)
-                        .setTitle("Add Attachment")
-                        .setItems(new String[]{"📷  Camera", "📁  From files"}, (d, which) -> {
-                            if (which == 0) {
-                                launchCamera();
-                            } else {
-                                attachmentPicker.launch(new String[]{"*/*"});
-                            }
-                        })
-                        .show();
-            } else {
-                // Open existing attachment
-                openAttachment();
+        attachmentListContainer = findViewById(R.id.attachmentListContainer);
+        btnAddAttachment        = findViewById(R.id.btnAddAttachment);
+
+        btnAddAttachment.setOnClickListener(v -> {
+            // Enforce 5-file limit
+            int currentCount = (existingEntry != null ? existingEntry.getAttachments().size() : 0)
+                    - pendingRemovals.size() + pendingAdds.size();
+            if (currentCount >= MAX_ATTACHMENT_COUNT) {
+                Toast.makeText(this,
+                        "Maximum " + MAX_ATTACHMENT_COUNT + " attachments per entry.",
+                        Toast.LENGTH_SHORT).show();
+                return;
             }
+            new MaterialAlertDialogBuilder(this)
+                    .setTitle("Add Attachment")
+                    .setItems(new String[]{"📷  Camera", "📁  From files"}, (d, which) -> {
+                        if (which == 0) launchCamera();
+                        else attachmentPicker.launch(new String[]{"*/*"});
+                    })
+                    .show();
         });
 
-        btnAttachRemove.setOnClickListener(v ->
-                new MaterialAlertDialogBuilder(this)
-                        .setTitle(getString(R.string.remove_btn))
-                        .setMessage(getString(R.string.confirm_remove_attachment))
-                        .setPositiveButton(getString(R.string.remove_btn), (d, w) -> {
-                            // Clear on the entry object immediately and persist —
-                            // no "pending" here because remove should not require
-                            // a separate Save tap; it saves instantly like unfavourite.
-                            if (existingEntry != null) {
-                                existingEntry.setAttachmentName("");
-                                existingEntry.setAttachmentData("");
-                                // Save in background — remove should feel instant
-                                final String json = storage.exportToJson(entries);
-                                if (json != null) {
-                                    new Thread(() -> {
-                                        storage.saveEntriesJson(json);
-                                        storage.setBackupPending(true);
-                                    }).start();
-                                }
-                            }
-                            // Also clear any in-flight pending so the row reflects reality
-                            pendingAttachmentName = null;
-                            pendingAttachmentData = null;
-                            updateAttachmentRow();
-                            Toast.makeText(this, R.string.attachment_removed, Toast.LENGTH_SHORT).show();
-                        })
-                        .setNegativeButton(getString(R.string.cancel), null)
-                        .show()
-        );
-
-        updateAttachmentRow();
+        renderAttachmentList();
     }
 
-    /** Refreshes the attachment row UI based on current state. */
-    private void updateAttachmentRow() {
-        // Resolve effective name/data (pending overrides saved)
-        String name = pendingAttachmentName != null ? pendingAttachmentName
-                : (existingEntry != null ? existingEntry.getAttachmentName() : "");
-        String data = pendingAttachmentData != null ? pendingAttachmentData
-                : (existingEntry != null ? existingEntry.getAttachmentData() : "");
+    /**
+     * Rebuilds the attachment list UI from current state.
+     * In VIEW mode: shows open button, no remove button.
+     * In EDIT mode: shows open + remove buttons, plus the Add button.
+     */
+    private void renderAttachmentList() {
+        if (attachmentListContainer == null) return;
+        attachmentListContainer.removeAllViews();
 
-        boolean hasFile = !name.isEmpty();
-
-        if (hasFile) {
-            // Show filename + approx size
-            long bytes = (data.length() * 3L) / 4; // approx decode size
-            String sizeStr = formatBytes(bytes);
-            if (bytes >= WARN_ATTACHMENT_BYTES) {
-                tvAttachmentWarning.setVisibility(View.VISIBLE);
-            } else {
-                tvAttachmentWarning.setVisibility(View.GONE);
-            }
-            tvAttachmentName.setText(name + "  " + sizeStr);
-            tvAttachmentName.setTextColor(getResources().getColor(R.color.text_primary));
-        } else {
-            tvAttachmentWarning.setVisibility(View.GONE);
-            if (isEditMode) {
-                tvAttachmentName.setText(getString(R.string.no_file_attached));
-            } else {
-                tvAttachmentName.setText(getString(R.string.no_attachment));
-            }
-            tvAttachmentName.setTextColor(getResources().getColor(R.color.hint_color));
+        // Show Add button in edit mode only
+        if (btnAddAttachment != null) {
+            btnAddAttachment.setVisibility(isEditMode ? View.VISIBLE : View.GONE);
         }
 
-        // Open/Attach button: always visible in EDIT; in VIEW only when file exists
-        btnAttachOpen.setVisibility((isEditMode || hasFile) ? View.VISIBLE : View.GONE);
+        // ── Saved attachments (minus removals) ────────────────────────────────
+        if (existingEntry != null) {
+            for (Attachment att : existingEntry.getAttachments()) {
+                if (pendingRemovals.contains(att.getId())) continue;
+                android.view.View row = getLayoutInflater()
+                        .inflate(R.layout.item_attachment_row, attachmentListContainer, false);
+                TextView tvName = row.findViewById(R.id.tvAttachFileName);
+                TextView tvSize = row.findViewById(R.id.tvAttachFileSize);
+                ImageButton btnOpen   = row.findViewById(R.id.btnAttachRowOpen);
+                ImageButton btnRemove = row.findViewById(R.id.btnAttachRowRemove);
 
-        // Remove button: only in EDIT mode when a file exists
-        btnAttachRemove.setVisibility((isEditMode && hasFile) ? View.VISIBLE : View.GONE);
+                tvName.setText(att.getName());
+                tvSize.setText(formatBytes(att.getSize()));
+                btnRemove.setVisibility(isEditMode ? View.VISIBLE : View.GONE);
+
+                btnOpen.setOnClickListener(v -> openSavedAttachment(att));
+                btnRemove.setOnClickListener(v -> {
+                    pendingRemovals.add(att.getId());
+                    renderAttachmentList();
+                });
+                attachmentListContainer.addView(row);
+            }
+        }
+
+        // ── Pending adds (not yet written to disk) ────────────────────────────
+        for (int i = 0; i < pendingAdds.size(); i++) {
+            final int idx = i;
+            PendingAttachment pa = pendingAdds.get(i);
+            android.view.View row = getLayoutInflater()
+                    .inflate(R.layout.item_attachment_row, attachmentListContainer, false);
+            TextView tvName = row.findViewById(R.id.tvAttachFileName);
+            TextView tvSize = row.findViewById(R.id.tvAttachFileSize);
+            ImageButton btnOpen   = row.findViewById(R.id.btnAttachRowOpen);
+            ImageButton btnRemove = row.findViewById(R.id.btnAttachRowRemove);
+
+            tvName.setText(pa.name + " \u2022 unsaved");
+            tvSize.setText(formatBytes(pa.bytes.length));
+            btnOpen.setVisibility(View.GONE); // can't open until saved
+            btnRemove.setVisibility(isEditMode ? View.VISIBLE : View.GONE);
+
+            btnRemove.setOnClickListener(v -> {
+                pendingAdds.remove(idx);
+                renderAttachmentList();
+            });
+            attachmentListContainer.addView(row);
+        }
+    }
+
+    /** Opens a saved attachment by reading from AttachmentStore and launching a viewer. */
+    private void openSavedAttachment(Attachment att) {
+        new Thread(() -> {
+            byte[] bytes;
+            try {
+                bytes = attachmentStore.read(att.getId());
+            } catch (Exception e) {
+                runOnUiThread(() -> new MaterialAlertDialogBuilder(this)
+                        .setTitle("File Not Found")
+                        .setMessage("The attachment file could not be read. It may have been deleted.")
+                        .setPositiveButton("OK", null)
+                        .show());
+                return;
+            }
+            runOnUiThread(() -> openBytesAsFile(bytes, att.getName(), att.getMimeType()));
+        }).start();
+    }
+
+    /** Writes bytes to cache and fires ACTION_VIEW intent. */
+    private void openBytesAsFile(byte[] bytes, String name, String mimeType) {
+        try {
+            String entryId = (existingEntry != null) ? existingEntry.getId() : "pending";
+            File cacheDir = new File(getCacheDir(), "attachments/" + entryId);
+            //noinspection ResultOfMethodCallIgnored
+            cacheDir.mkdirs();
+            File outFile = new File(cacheDir, name);
+            try (FileOutputStream fos = new FileOutputStream(outFile)) { fos.write(bytes); }
+
+            Uri fileUri = FileProvider.getUriForFile(this,
+                    getPackageName() + ".fileprovider", outFile);
+
+            String mime = (mimeType != null && !mimeType.isEmpty()) ? mimeType : "*/*";
+
+            Intent viewIntent = new Intent(Intent.ACTION_VIEW);
+            viewIntent.setDataAndType(fileUri, mime);
+            viewIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    | Intent.FLAG_ACTIVITY_NEW_DOCUMENT
+                    | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
+            viewIntent.setClipData(ClipData.newRawUri("attachment", fileUri));
+
+            Intent chooser = Intent.createChooser(viewIntent, "Open with");
+            chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    | Intent.FLAG_ACTIVITY_NEW_DOCUMENT
+                    | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
+            try {
+                startActivity(chooser);
+            } catch (ActivityNotFoundException ex) {
+                Toast.makeText(this, R.string.no_app_to_open, Toast.LENGTH_SHORT).show();
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, R.string.attachment_open_error, Toast.LENGTH_SHORT).show();
+        }
     }
 
     // v20: Camera capture ─────────────────────────────────────────────────────
@@ -1513,81 +1632,77 @@ public class DetailActivity extends BaseActivity {
         }
     }
 
-    /** Called when camera capture completes successfully — auto-compresses if needed and stores as attachment. */
+    /** Called when camera capture completes successfully — auto-compresses if needed, appends to pendingAdds. */
     private void handleCameraCapture() {
         try {
-            InputStream is = getContentResolver().openInputStream(cameraOutputUri);
-            if (is == null) throw new Exception("Cannot read captured photo");
-            byte[] bytes = is.readAllBytes();
-            is.close();
+            byte[] bytes;
+            try (InputStream is = getContentResolver().openInputStream(cameraOutputUri)) {
+                if (is == null) throw new Exception("Cannot read captured photo");
+                bytes = readStreamBytes(is);
+            }
 
-            // Delete the temp file immediately — no longer needed after reading bytes
+            // Delete the temp file immediately
             try {
                 java.io.File tempFile = new java.io.File(cameraOutputUri.getPath());
                 if (tempFile.exists()) tempFile.delete();
-            } catch (Exception ignored) { /* best-effort cleanup */ }
+            } catch (Exception ignored) { }
             cameraOutputUri = null;
 
-            // Auto-compress if over size limit (camera photos are always JPEG — compress well)
-            if (bytes.length > MAX_ATTACHMENT_BYTES) {
+            // Auto-compress if over size limit
+            if (bytes.length > MAX_SINGLE_BYTES) {
                 android.graphics.Bitmap bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
                 if (bitmap == null) throw new Exception("Cannot decode photo");
-
                 int[] qualities = {80, 60, 40};
                 byte[] compressed = null;
                 for (int quality : qualities) {
                     java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
                     bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, baos);
                     compressed = baos.toByteArray();
-                    if (compressed.length <= MAX_ATTACHMENT_BYTES) break;
+                    if (compressed.length <= MAX_SINGLE_BYTES) break;
                 }
                 bitmap.recycle();
-
-                if (compressed == null || compressed.length > MAX_ATTACHMENT_BYTES) {
+                if (compressed == null || compressed.length > MAX_SINGLE_BYTES) {
                     new MaterialAlertDialogBuilder(this)
                             .setTitle("File Too Large")
-                            .setMessage(getString(R.string.file_too_large)
-                                    + "  (" + formatBytes(bytes.length) + ")")
-                            .setPositiveButton("OK", null)
-                            .show();
+                            .setMessage(getString(R.string.file_too_large) + "  (" + formatBytes(bytes.length) + ")")
+                            .setPositiveButton("OK", null).show();
                     return;
                 }
                 bytes = compressed;
             }
 
-            String fileName = "photo_" + new java.text.SimpleDateFormat(
-                    "yyyyMMdd_HHmmss", java.util.Locale.getDefault())
-                    .format(new java.util.Date()) + ".jpg";
+            // Check 15 MB total limit across all attachments
+            if (!checkTotalSizeLimit(bytes.length)) return;
 
-            pendingAttachmentName = fileName;
-            pendingAttachmentData = Base64.encodeToString(bytes, Base64.NO_WRAP);
-            updateAttachmentRow();
+            String fileName = "photo_" + new java.text.SimpleDateFormat(
+                    "yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(new java.util.Date()) + ".jpg";
+            pendingAdds.add(new PendingAttachment(fileName, "image/jpeg", bytes));
+            renderAttachmentList();
 
         } catch (Exception e) {
             Toast.makeText(this, getString(R.string.attachment_open_error), Toast.LENGTH_SHORT).show();
         }
     }
 
-    /** Called when user picks a file from SAF picker. */
+    /** Called when user picks a file from SAF picker — appends to pendingAdds. */
     private void handleAttachmentPicked(Uri uri) {
         try {
-            // Read all bytes in one pass (avoids opening the stream twice)
             byte[] bytes;
             try (InputStream is = getContentResolver().openInputStream(uri)) {
                 if (is == null) throw new Exception("Cannot read file");
-                bytes = is.readAllBytes();
+                bytes = readStreamBytes(is);
             }
 
-            // Reject if over size limit
-            if (bytes.length > MAX_ATTACHMENT_BYTES) {
+            if (bytes.length > MAX_SINGLE_BYTES) {
                 new MaterialAlertDialogBuilder(this)
                         .setTitle("File Too Large")
-                        .setMessage(getString(R.string.file_too_large)
-                                + "  (" + formatBytes(bytes.length) + ")")
-                        .setPositiveButton("OK", null)
-                        .show();
+                        .setMessage(getString(R.string.file_too_large) + "  (" + formatBytes(bytes.length) + ")")
+                        .setPositiveButton("OK", null).show();
                 return;
             }
+
+            // Check 15 MB total limit across all attachments
+            if (!checkTotalSizeLimit(bytes.length)) return;
 
             // Get original filename
             String fileName = "attachment";
@@ -1599,142 +1714,47 @@ public class DetailActivity extends BaseActivity {
                 cursor.close();
             }
 
-            // Encode to Base64
-            String base64 = Base64.encodeToString(bytes, Base64.NO_WRAP);
+            // Resolve MIME type
+            String mimeType = getContentResolver().getType(uri);
+            if (mimeType == null || mimeType.isEmpty()) mimeType = "application/octet-stream";
 
-            pendingAttachmentName = fileName;
-            pendingAttachmentData = base64;
-            updateAttachmentRow();
+            pendingAdds.add(new PendingAttachment(fileName, mimeType, bytes));
+            renderAttachmentList();
 
         } catch (Exception e) {
             Toast.makeText(this, getString(R.string.attachment_open_error), Toast.LENGTH_SHORT).show();
         }
     }
 
-    /** Opens the attachment — first shows which apps support it, then launches chooser. */
-    private void openAttachment() {
-        String name = pendingAttachmentName != null ? pendingAttachmentName
-                : (existingEntry != null ? existingEntry.getAttachmentName() : "");
-        String data = pendingAttachmentData != null ? pendingAttachmentData
-                : (existingEntry != null ? existingEntry.getAttachmentData() : "");
-
-        if (name.isEmpty() || data.isEmpty()) return;
-
-        try {
-            // Decode and write to cache.
-            // Each entry gets its own subdirectory keyed by entry ID so that
-            // two entries with attachments sharing the same filename never
-            // collide on disk — without this, viewer apps cache by URI and
-            // always show the first entry's file even when opening a different entry.
-            byte[] bytes = Base64.decode(data, Base64.NO_WRAP);
-            String entryId = (existingEntry != null && existingEntry.getId() != null)
-                    ? existingEntry.getId()
-                    : "pending";
-            File cacheDir = new File(getCacheDir(), "attachments/" + entryId);
-            //noinspection ResultOfMethodCallIgnored
-            cacheDir.mkdirs();
-            File outFile = new File(cacheDir, name);
-            try (FileOutputStream fos = new FileOutputStream(outFile)) {
-                fos.write(bytes);
+    /**
+     * Checks whether adding newBytes would exceed the 15 MB total limit.
+     * Shows an error dialog and returns false if it would.
+     */
+    private boolean checkTotalSizeLimit(long newBytes) {
+        long total = newBytes;
+        if (existingEntry != null) {
+            for (Attachment a : existingEntry.getAttachments()) {
+                if (!pendingRemovals.contains(a.getId())) total += a.getSize();
             }
-
-            // FileProvider URI
-            Uri fileUri = FileProvider.getUriForFile(this,
-                    getPackageName() + ".fileprovider", outFile);
-
-            // Resolve MIME type
-            String ext = MimeTypeMap.getFileExtensionFromUrl(
-                    Uri.fromFile(outFile).toString());
-            String mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(
-                    ext != null ? ext.toLowerCase() : "");
-            if (mime == null || mime.isEmpty()) mime = "*/*";
-
-            // Query which apps can handle this MIME
-            Intent queryIntent = new Intent(Intent.ACTION_VIEW);
-            queryIntent.setDataAndType(fileUri, mime);
-            queryIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-
-            PackageManager pm = getPackageManager();
-            List<ResolveInfo> matched = pm.queryIntentActivities(queryIntent,
-                    PackageManager.MATCH_DEFAULT_ONLY);
-
-            // Also query with */* to catch file managers
-            Intent queryFallback = new Intent(Intent.ACTION_VIEW);
-            queryFallback.setDataAndType(fileUri, "*/*");
-            queryFallback.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            List<ResolveInfo> fallbackMatched = pm.queryIntentActivities(queryFallback,
-                    PackageManager.MATCH_DEFAULT_ONLY);
-
-            // Merge both lists — deduplicate by package name
-            List<String> appNames = new ArrayList<>();
-            List<String> seenPackages = new ArrayList<>();
-            for (ResolveInfo ri : matched) {
-                String pkg = ri.activityInfo.packageName;
-                if (!seenPackages.contains(pkg)) {
-                    seenPackages.add(pkg);
-                    appNames.add("• " + ri.loadLabel(pm).toString());
-                }
-            }
-            for (ResolveInfo ri : fallbackMatched) {
-                String pkg = ri.activityInfo.packageName;
-                if (!seenPackages.contains(pkg)) {
-                    seenPackages.add(pkg);
-                    appNames.add("• " + ri.loadLabel(pm).toString());
-                }
-            }
-
-            // Build the final chooser intent.
-            // FLAG_ACTIVITY_NEW_DOCUMENT | FLAG_ACTIVITY_MULTIPLE_TASK is the
-            // correct combination for opening a file as a fresh document every time:
-            //
-            //  - FLAG_ACTIVITY_NEW_DOCUMENT  → tells Android to treat each unique URI
-            //    as a separate document task. This is the API designed specifically for
-            //    "open this file" use cases and works even when the viewer app declares
-            //    launchMode="singleTask" in its own manifest (which Adobe Reader,
-            //    Google PDF viewer, and most image viewers do). FLAG_ACTIVITY_NEW_TASK
-            //    alone is resisted by singleTask apps; FLAG_ACTIVITY_NEW_DOCUMENT is not.
-            //
-            //  - FLAG_ACTIVITY_MULTIPLE_TASK → allows Android to create multiple
-            //    concurrent tasks for the same viewer app (one per document URI),
-            //    so test1.pdf and test2.pdf each get their own independent task.
-            //
-            // Result: opening Entry 2's attachment while Entry 1's viewer is still open
-            // always shows Entry 2's file in a fresh viewer, never the stale cached one.
-            final String finalMime = mime;
-            Intent viewIntent = new Intent(Intent.ACTION_VIEW);
-            viewIntent.setDataAndType(fileUri, finalMime);
-            viewIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    | Intent.FLAG_ACTIVITY_NEW_DOCUMENT
-                    | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
-            viewIntent.setClipData(ClipData.newRawUri("attachment", fileUri));
-
-            Intent chooserIntent = Intent.createChooser(viewIntent, "Open with");
-            chooserIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    | Intent.FLAG_ACTIVITY_NEW_DOCUMENT
-                    | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
-
-            if (appNames.isEmpty()) {
-                // No apps found — tell user what type of app they need
-                String suggestion = getSuggestedAppHint(ext != null ? ext.toLowerCase() : "");
-                new MaterialAlertDialogBuilder(this)
-                        .setTitle("No App Found")
-                        .setMessage("No app on your device can open this file type (."
-                                + (ext != null ? ext : "unknown") + ").\n\n"
-                                + suggestion)
-                        .setPositiveButton("OK", null)
-                        .show();
-            } else {
-                // Directly launch the chooser — no intermediate dialog
-                try {
-                    startActivity(chooserIntent);
-                } catch (ActivityNotFoundException ex) {
-                    Toast.makeText(this, R.string.no_app_to_open, Toast.LENGTH_SHORT).show();
-                }
-            }
-
-        } catch (Exception e) {
-            Toast.makeText(this, R.string.attachment_open_error, Toast.LENGTH_SHORT).show();
         }
+        for (PendingAttachment pa : pendingAdds) total += pa.bytes.length;
+        if (total > MAX_TOTAL_BYTES) {
+            new MaterialAlertDialogBuilder(this)
+                    .setTitle("Total Size Exceeded")
+                    .setMessage("Total attachments cannot exceed " + formatBytes(MAX_TOTAL_BYTES) + ".")
+                    .setPositiveButton("OK", null).show();
+            return false;
+        }
+        return true;
+    }
+
+    /** Reads all bytes from an InputStream. Compatible with API 23+. */
+    private byte[] readStreamBytes(InputStream is) throws java.io.IOException {
+        java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+        byte[] chunk = new byte[8192];
+        int n;
+        while ((n = is.read(chunk)) != -1) buffer.write(chunk, 0, n);
+        return buffer.toByteArray();
     }
 
     /**
@@ -1773,7 +1793,6 @@ public class DetailActivity extends BaseActivity {
         return String.format("%.1f MB", bytes / (1024.0 * 1024));
     }
 
-    /** v12: Formats a timestamp millis to a readable date string. */
     private String formatDate(long millis) {
         java.util.Calendar now = java.util.Calendar.getInstance();
         java.util.Calendar then = java.util.Calendar.getInstance();
@@ -1782,5 +1801,25 @@ public class DetailActivity extends BaseActivity {
                 ? new java.text.SimpleDateFormat("d MMM", java.util.Locale.getDefault())
                 : new java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.getDefault());
         return fmt.format(new java.util.Date(millis));
+    }
+
+    // ── v24: PendingAttachment ────────────────────────────────────────────────
+
+    /**
+     * Holds a file the user has picked but that has not yet been written to
+     * AttachmentStore. Lives only in memory until saveEntry() is called.
+     * On discard (Back → Discard / btnBarDiscard), pendingAdds is cleared
+     * and no files are ever written to disk.
+     */
+    static class PendingAttachment {
+        final String name;
+        final String mimeType;
+        final byte[] bytes;
+
+        PendingAttachment(String name, String mimeType, byte[] bytes) {
+            this.name     = name;
+            this.mimeType = mimeType;
+            this.bytes    = bytes;
+        }
     }
 }

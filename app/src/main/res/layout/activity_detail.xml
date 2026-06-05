@@ -268,69 +268,51 @@
 
             </LinearLayout>
 
-            <!-- v9: Attachment row — same style as a field row -->
+            <!-- v24: Attachments section — replaces single-attachment row (v9) -->
+
+            <!-- Section header row -->
             <LinearLayout
-                android:id="@+id/attachmentRow"
                 android:layout_width="match_parent"
-                android:layout_height="48dp"
+                android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:layout_marginTop="4dp">
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="2dp">
 
-                <!-- Label -->
                 <TextView
-                    android:layout_width="0dp"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/attachment_label"
+                    android:text="@string/attachments_label"
                     android:drawableStart="@drawable/ic_attachment"
                     android:drawablePadding="6dp"
                     android:textColor="@color/text_secondary"
                     android:textSize="14sp"/>
 
-                <!-- Filename + size (tappable in VIEW mode to open) -->
-                <TextView
-                    android:id="@+id/tvAttachmentName"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="2"
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp"
-                    android:singleLine="true"
-                    android:ellipsize="end"/>
-
-                <!-- Open / Attach button -->
-                <ImageButton
-                    android:id="@+id/btnAttachOpen"
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:src="@drawable/ic_attachment"
-                    android:contentDescription="Attach or Open"
-                    app:tint="@color/accent"/>
-
-                <!-- Remove button -->
-                <ImageButton
-                    android:id="@+id/btnAttachRemove"
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:src="@drawable/ic_close"
-                    android:contentDescription="Remove attachment"
-                    android:visibility="gone"
-                    app:tint="@color/text_primary"/>
-
             </LinearLayout>
 
-            <!-- v9: Size warning — shown only for 3–5MB files -->
-            <TextView
-                android:id="@+id/tvAttachmentWarning"
+            <!-- Dynamic attachment rows — populated by DetailActivity.renderAttachmentList() -->
+            <LinearLayout
+                android:id="@+id/attachmentListContainer"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/attachment_size_warning"
-                android:textColor="@color/hint_color"
-                android:textSize="11sp"
-                android:layout_marginBottom="4dp"
+                android:orientation="vertical"
+                android:paddingStart="28dp"/>
+
+            <!-- Add attachment button — visible in EDIT mode only -->
+            <TextView
+                android:id="@+id/btnAddAttachment"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:text="@string/add_attachment"
+                android:textColor="@color/accent"
+                android:textSize="14sp"
+                android:gravity="center_vertical"
+                android:drawableStart="@drawable/ic_add"
+                android:drawablePadding="4dp"
+                android:paddingStart="28dp"
+                android:paddingEnd="8dp"
+                android:layout_marginTop="2dp"
+                android:background="?attr/selectableItemBackground"
                 android:visibility="gone"/>
 
         </LinearLayout>

@@ -3,6 +3,8 @@ package com.cryptex.app;
 import java.io.ByteArrayOutputStream;
 import java.security.SecureRandom;
 import java.security.spec.KeySpec;
+import java.util.ArrayList;
+import java.util.List;
 
 import javax.crypto.AEADBadTagException;
 import javax.crypto.Cipher;
@@ -128,5 +130,181 @@ public class BackupCrypto {
     /** Thrown when the file header is not a recognised Cryptex backup. */
     public static class InvalidFileException extends Exception {
         public InvalidFileException(String msg) { super(msg); }
+    }
+
+    // ── v24: ZIP-format backup ─────────────────────────────────────────────────
+    //
+    // .cxb v2 file = standard ZIP containing:
+    //   salt                    — 16 raw bytes (PBKDF2 salt, not encrypted)
+    //   entries.enc             — IV(12) + AES-256-GCM ciphertext of entries JSON
+    //   attachments/{id}.enc    — IV(12) + AES-256-GCM ciphertext of attachment bytes
+    //
+    // A single PBKDF2 key is derived and reused for all entries in the ZIP,
+    // so the expensive derivation only runs once per export/import.
+    // Detection: first 4 bytes == 'P','K',0x03,0x04  (standard ZIP magic).
+
+    /** Carrier for one attachment's bytes during backup/restore. */
+    public static class AttachmentItem {
+        public final String id;    // UUID — matches Attachment.getId()
+        public final byte[] data;  // decrypted raw file bytes
+        public AttachmentItem(String id, byte[] data) { this.id = id; this.data = data; }
+    }
+
+    /** Returned by {@link #decryptZip} — holds the entries JSON and all attachment bytes. */
+    public static class ZipContent {
+        public final String json;
+        public final List<AttachmentItem> attachments;
+        public ZipContent(String json, List<AttachmentItem> attachments) {
+            this.json = json;
+            this.attachments = attachments;
+        }
+    }
+
+    /**
+     * Encrypts entries JSON and attachment bytes into a ZIP-format .cxb backup file.
+     * One PBKDF2 key is derived and shared across all entries to keep export fast.
+     *
+     * @param json        entries JSON string (from StorageHelper.exportToJson)
+     * @param attachments list of (id, decrypted bytes) pairs; may be empty
+     * @param password    backup password chosen by the user
+     * @return raw file bytes (standard ZIP — detectable by PK\x03\x04 magic)
+     */
+    public static byte[] encryptZip(String json, List<AttachmentItem> attachments,
+                                     String password) throws Exception {
+        SecureRandom rng  = new SecureRandom();
+        byte[] salt = new byte[SALT_LEN];
+        rng.nextBytes(salt);
+        SecretKey key = deriveKey(password, salt);
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(baos)) {
+
+            // 1. Raw salt — read first during decryptZip so the key can be derived once
+            zos.putNextEntry(new java.util.zip.ZipEntry("salt"));
+            zos.write(salt);
+            zos.closeEntry();
+
+            // 2. Entries JSON
+            byte[] entriesEnc = encryptWithKey(json.getBytes("UTF-8"), key, rng);
+            zos.putNextEntry(new java.util.zip.ZipEntry("entries.enc"));
+            zos.write(entriesEnc);
+            zos.closeEntry();
+
+            // 3. Attachment files
+            for (AttachmentItem item : attachments) {
+                byte[] attEnc = encryptWithKey(item.data, key, rng);
+                zos.putNextEntry(new java.util.zip.ZipEntry("attachments/" + item.id + ".enc"));
+                zos.write(attEnc);
+                zos.closeEntry();
+            }
+        }
+        return baos.toByteArray();
+    }
+
+    /**
+     * Decrypts a ZIP-format .cxb v2 backup file.
+     *
+     * @throws WrongPasswordException if the GCM auth tag check fails for entries.enc
+     * @throws InvalidFileException   if the ZIP is not a valid Cryptex v2 backup
+     */
+    public static ZipContent decryptZip(byte[] zipBytes, String password) throws Exception {
+        // Pass 1: extract the salt so the key can be derived once
+        byte[] salt = null;
+        try (java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(
+                new java.io.ByteArrayInputStream(zipBytes))) {
+            java.util.zip.ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                if ("salt".equals(entry.getName())) {
+                    salt = readZipEntry(zis);
+                    break;
+                }
+                zis.closeEntry();
+            }
+        }
+        if (salt == null || salt.length != SALT_LEN) {
+            throw new InvalidFileException("Not a valid Cryptex v2 backup (missing salt entry).");
+        }
+        SecretKey key = deriveKey(password, salt);
+
+        // Pass 2: decrypt entries + attachments
+        String json = null;
+        List<AttachmentItem> attachments = new ArrayList<>();
+        try (java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(
+                new java.io.ByteArrayInputStream(zipBytes))) {
+            java.util.zip.ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                String name = entry.getName();
+                if ("entries.enc".equals(name)) {
+                    byte[] enc = readZipEntry(zis);
+                    try {
+                        json = new String(decryptWithKey(enc, key), "UTF-8");
+                    } catch (AEADBadTagException e) {
+                        throw new WrongPasswordException("Wrong password or corrupted backup file.");
+                    }
+                } else if (name.startsWith("attachments/") && name.endsWith(".enc")) {
+                    // File name pattern: attachments/{uuid}.enc — strip prefix and .enc suffix
+                    String id = name.substring("attachments/".length(),
+                            name.length() - ".enc".length());
+                    byte[] enc = readZipEntry(zis);
+                    try {
+                        attachments.add(new AttachmentItem(id, decryptWithKey(enc, key)));
+                    } catch (AEADBadTagException e) {
+                        // Skip corrupt individual attachment — don't abort the whole import
+                    }
+                }
+                zis.closeEntry();
+            }
+        }
+        if (json == null) {
+            throw new InvalidFileException("Not a valid Cryptex v2 backup (missing entries.enc).");
+        }
+        return new ZipContent(json, attachments);
+    }
+
+    /**
+     * Fast check: returns true if the bytes are a Cryptex v2 ZIP backup.
+     * Checks only the ZIP magic bytes (PK\x03\x04) — O(1), no decompression.
+     */
+    public static boolean isZipBackup(byte[] bytes) {
+        return bytes != null && bytes.length >= 4
+                && bytes[0] == 'P' && bytes[1] == 'K'
+                && bytes[2] == 0x03 && bytes[3] == 0x04;
+    }
+
+    // ── v24: key-based encrypt/decrypt (shared key, no per-call PBKDF2) ───────
+
+    /** Format: [IV(12)][AES-256-GCM ciphertext + 16-byte auth tag]. */
+    private static byte[] encryptWithKey(byte[] plainBytes, SecretKey key,
+                                          SecureRandom rng) throws Exception {
+        byte[] iv = new byte[IV_LEN];
+        rng.nextBytes(iv);
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_BITS, iv));
+        byte[] ciphertext = cipher.doFinal(plainBytes);
+        ByteArrayOutputStream out = new ByteArrayOutputStream(IV_LEN + ciphertext.length);
+        out.write(iv);
+        out.write(ciphertext);
+        return out.toByteArray();
+    }
+
+    /** Decrypts a blob produced by {@link #encryptWithKey}. Throws AEADBadTagException on wrong key. */
+    private static byte[] decryptWithKey(byte[] data, SecretKey key) throws Exception {
+        if (data.length < IV_LEN + 16)
+            throw new InvalidFileException("Encrypted ZIP entry is too small.");
+        byte[] iv         = slice(data, 0, IV_LEN);
+        byte[] ciphertext = slice(data, IV_LEN, data.length - IV_LEN);
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_BITS, iv));
+        return cipher.doFinal(ciphertext);
+    }
+
+    /** Reads all available bytes from a ZipInputStream entry without closing the stream. */
+    private static byte[] readZipEntry(java.util.zip.ZipInputStream zis)
+            throws java.io.IOException {
+        ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        byte[] chunk = new byte[8192];
+        int n;
+        while ((n = zis.read(chunk)) != -1) buf.write(chunk, 0, n);
+        return buf.toByteArray();
     }
 }

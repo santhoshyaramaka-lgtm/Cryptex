@@ -194,7 +194,23 @@ public abstract class BaseActivity extends AppCompatActivity {
                 String json = baseStorage.exportToJson(entries);
                 if (json == null) return;
 
-                byte[] encrypted = BackupCrypto.encrypt(json, password);
+                // v24: collect attachment files for ZIP backup
+                AttachmentStore attachmentStore = new AttachmentStore(BaseActivity.this);
+                java.util.List<BackupCrypto.AttachmentItem> attachmentItems =
+                        new java.util.ArrayList<>();
+                for (Entry entry : entries) {
+                    for (Attachment att : entry.getAttachments()) {
+                        try {
+                            byte[] data = attachmentStore.read(att.getId());
+                            attachmentItems.add(
+                                    new BackupCrypto.AttachmentItem(att.getId(), data));
+                        } catch (Exception ignored) {
+                            // Skip unreadable attachment — rest of backup still runs
+                        }
+                    }
+                }
+
+                byte[] encrypted = BackupCrypto.encryptZip(json, attachmentItems, password);
 
                 Uri uri = Uri.parse(uriString);
                 try (OutputStream os = getContentResolver().openOutputStream(uri, "w")) {

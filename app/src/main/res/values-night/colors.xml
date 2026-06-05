@@ -27,4 +27,5 @@
     <color name="search_highlight_text">#000000</color>
     <color name="input_bg_color">#2C2C2E</color>
     <color name="input_border_color">#636366</color>
+    <color name="icon_circle_bg">#3C3C3E</color>
 </resources>

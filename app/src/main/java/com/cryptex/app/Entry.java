@@ -26,8 +26,7 @@ public class Entry {
     private long    createdAt     = 0; // v12: set once on creation, never changed on edit
     private boolean isFavourite   = false;
     private long    pinnedAt      = 0;
-    private String  attachmentName = "";
-    private String  attachmentData = "";
+    private List<Attachment> attachments = new ArrayList<>(); // v24: multiple attachments
     private boolean isArchived     = false; // v19: archived entries hidden from lists
     private List<ChecklistItem> checklistItems = new ArrayList<>(); // v20: checklist type
 
@@ -83,12 +82,10 @@ public class Entry {
     public long getPinnedAt()             { return pinnedAt; }
     public void setPinnedAt(long millis)  { this.pinnedAt = millis; }
 
-    // ── Attachment (v9) ───────────────────────────────────────────────────────
-    public String getAttachmentName()              { return attachmentName; }
-    public void   setAttachmentName(String name)   { this.attachmentName = name != null ? name : ""; }
-    public String getAttachmentData()              { return attachmentData; }
-    public void   setAttachmentData(String data)   { this.attachmentData = data != null ? data : ""; }
-    public boolean hasAttachment()                 { return !attachmentName.isEmpty(); }
+    // ── Attachments (v24: multiple attachments — replaces single v9 attachment) ──────────────
+    public List<Attachment> getAttachments()                          { return attachments; }
+    public void             setAttachments(List<Attachment> list)     { this.attachments = list != null ? list : new ArrayList<>(); }
+    public boolean          hasAttachment()                           { return !attachments.isEmpty(); }
 
     // ── isArchived (v19) ──────────────────────────────────────────────────────
     public boolean isArchived()                    { return isArchived; }
