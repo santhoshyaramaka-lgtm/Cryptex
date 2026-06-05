@@ -272,9 +272,23 @@ public class SettingsActivity extends BaseActivity {
                 String json = storage.exportToJson(entries);
                 if (json == null) throw new Exception("JSON serialisation failed.");
 
-                byte[] encrypted = BackupCrypto.encrypt(json, password);
+                // v24: collect attachment files for ZIP backup
+                AttachmentStore attachmentStore = new AttachmentStore(this);
+                java.util.List<BackupCrypto.AttachmentItem> attachmentItems = new java.util.ArrayList<>();
+                for (Entry entry : entries) {
+                    for (Attachment att : entry.getAttachments()) {
+                        try {
+                            byte[] data = attachmentStore.read(att.getId());
+                            attachmentItems.add(new BackupCrypto.AttachmentItem(att.getId(), data));
+                        } catch (Exception ignored) {
+                            // Skip unreadable attachment — rest of backup still exports
+                        }
+                    }
+                }
 
-                try (OutputStream os = getContentResolver().openOutputStream(uri)) {
+                byte[] encrypted = BackupCrypto.encryptZip(json, attachmentItems, password);
+
+                try (java.io.OutputStream os = getContentResolver().openOutputStream(uri)) {
                     if (os == null) throw new Exception("Cannot open output stream.");
                     os.write(encrypted);
                 }
@@ -283,7 +297,6 @@ public class SettingsActivity extends BaseActivity {
                 storage.setBackupPassword(password);
                 storage.setLastExportTime(System.currentTimeMillis());
                 storage.setBackupUri(uri.toString());
-                // Permission already taken in picker callback — no need to repeat here
 
                 runOnUiThread(() -> {
                     progress.dismiss();
@@ -291,7 +304,7 @@ public class SettingsActivity extends BaseActivity {
                             ? getString(R.string.backup_updated)
                             : getString(R.string.export_success);
                     Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
-                    updateBackupCard(); // show/refresh Update Backup card
+                    updateBackupCard();
                 });
 
             } catch (Exception e) {
@@ -349,13 +362,32 @@ public class SettingsActivity extends BaseActivity {
 
         new Thread(() -> {
             try {
-                // Read all bytes from the URI
                 byte[] fileBytes = readAllBytes(uri);
 
-                String json = BackupCrypto.decrypt(fileBytes, password);
+                List<Entry> imported;
+                AttachmentStore attachmentStore = new AttachmentStore(this);
 
-                List<Entry> imported = storage.importFromJson(json);
-                if (imported == null) throw new Exception("Corrupted backup data.");
+                if (BackupCrypto.isZipBackup(fileBytes)) {
+                    // ── v24 ZIP format ──────────────────────────────────────────
+                    BackupCrypto.ZipContent zipContent = BackupCrypto.decryptZip(fileBytes, password);
+                    imported = storage.importFromJson(zipContent.json);
+                    if (imported == null) throw new Exception("Corrupted backup data.");
+                    // Restore attachment files
+                    for (BackupCrypto.AttachmentItem item : zipContent.attachments) {
+                        try {
+                            attachmentStore.writeById(item.id, item.data);
+                        } catch (Exception ignored) {
+                            // Skip unrestorable attachment — entry still imports
+                        }
+                    }
+                } else {
+                    // ── Legacy blob format (pre-v24) ────────────────────────────
+                    String json = BackupCrypto.decrypt(fileBytes, password);
+                    imported = storage.importFromJson(json);
+                    // importFromJson() auto-migrates old attachmentName/Data fields
+                    // (Base64 → AttachmentStore files) via StorageHelper.entryFromJson()
+                    if (imported == null) throw new Exception("Corrupted backup data.");
+                }
 
                 // Merge: skip duplicate IDs
                 List<Entry> existing = storage.loadEntries();
@@ -365,19 +397,17 @@ public class SettingsActivity extends BaseActivity {
                         if (ex.getId().equals(e.getId())) { found = true; break; }
                     }
                     if (!found) {
-                        // v8: stamp import time if entry has no timestamp
                         if (e.getUpdatedAt() == 0) e.setUpdatedAt(System.currentTimeMillis());
                         existing.add(e);
                     }
                 }
                 storage.saveEntries(existing);
-                // After import the local data matches the backup file — no backup needed yet
                 storage.setBackupPending(false);
 
                 runOnUiThread(() -> {
                     progress.dismiss();
                     Toast.makeText(this, getString(R.string.import_success), Toast.LENGTH_SHORT).show();
-                    updateBackupCard(); // refresh Update Backup card visibility after import
+                    updateBackupCard();
                 });
 
             } catch (BackupCrypto.WrongPasswordException e) {
@@ -657,7 +687,6 @@ public class SettingsActivity extends BaseActivity {
         List<Entry> activeEntries = new java.util.ArrayList<>();
         for (Entry e : allEntries) {
             if (!e.isArchived()) {
-                e.setAttachmentData(""); // strip Base64 blob — not needed for PDF
                 activeEntries.add(e);
             }
         }

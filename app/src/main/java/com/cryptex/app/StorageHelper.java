@@ -38,9 +38,12 @@ public class StorageHelper {
     private static final String KEY_PIN     = "pin";
 
     private final SharedPreferences prefs;
+    private final Context context; // kept for AttachmentStore — always applicationContext
     private boolean encryptionFailed = false; // true if EncryptedSharedPreferences init failed
+    private boolean attachmentMigrationOccurred = false; // v24: set in entryFromJson when old format is migrated
 
     public StorageHelper(Context context) {
+        this.context = context.getApplicationContext();
         SharedPreferences temp;
         try {
             MasterKey masterKey = new MasterKey.Builder(context)
@@ -121,6 +124,7 @@ public class StorageHelper {
 
     public List<Entry> loadEntries() {
         List<Entry> list = new ArrayList<>();
+        attachmentMigrationOccurred = false;
         try {
             String json = prefs.getString(KEY_ENTRIES, "[]");
             JSONArray arr = new JSONArray(json);
@@ -130,6 +134,12 @@ public class StorageHelper {
             }
         } catch (Exception e) {
             // Return empty list on error
+        }
+        // v24: persist new format immediately if any entry was migrated from old
+        // single-attachment fields — prevents migration running again on next load
+        if (attachmentMigrationOccurred) {
+            saveEntries(list);
+            attachmentMigrationOccurred = false;
         }
         return list;
     }
@@ -193,8 +203,17 @@ public class StorageHelper {
         obj.put("createdAt",       e.getCreatedAt()); // v12
         obj.put("favourite",       e.isFavourite());
         obj.put("pinnedAt",        e.getPinnedAt());
-        obj.put("attachmentName",  e.getAttachmentName());
-        obj.put("attachmentData",  e.getAttachmentData());
+        // v24: attachments list — metadata only, file bytes live in AttachmentStore
+        JSONArray attachmentsArr = new JSONArray();
+        for (Attachment a : e.getAttachments()) {
+            JSONObject aObj = new JSONObject();
+            aObj.put("id",       a.getId());
+            aObj.put("name",     a.getName());
+            aObj.put("mimeType", a.getMimeType());
+            aObj.put("size",     a.getSize());
+            attachmentsArr.put(aObj);
+        }
+        obj.put("attachments", attachmentsArr);
         obj.put("archived",        e.isArchived()); // v19
         // v20: checklist items
         JSONArray itemsArr = new JSONArray();
@@ -237,8 +256,40 @@ public class StorageHelper {
         entry.setCreatedAt(createdAt > 0 ? createdAt : entry.getUpdatedAt());
         entry.setFavourite(obj.optBoolean("favourite", false));
         entry.setPinnedAt(obj.optLong("pinnedAt", 0));
-        entry.setAttachmentName(obj.optString("attachmentName", ""));
-        entry.setAttachmentData(obj.optString("attachmentData", ""));
+        // v24: attachment deserialization — new list format or migrate old single attachment
+        JSONArray attachmentsJson = obj.optJSONArray("attachments");
+        if (attachmentsJson != null && attachmentsJson.length() > 0) {
+            // New format: read metadata list
+            List<Attachment> attachments = new ArrayList<>();
+            for (int i = 0; i < attachmentsJson.length(); i++) {
+                JSONObject aObj = attachmentsJson.getJSONObject(i);
+                attachments.add(new Attachment(
+                        aObj.optString("id",       ""),
+                        aObj.optString("name",     ""),
+                        aObj.optString("mimeType", ""),
+                        aObj.optLong("size", 0)
+                ));
+            }
+            entry.setAttachments(attachments);
+        } else {
+            // Migration path: old single attachment embedded as Base64
+            String oldName = obj.optString("attachmentName", "");
+            String oldData = obj.optString("attachmentData", "");
+            if (!oldName.isEmpty() && !oldData.isEmpty()) {
+                try {
+                    byte[] bytes = android.util.Base64.decode(oldData, android.util.Base64.NO_WRAP);
+                    AttachmentStore store = new AttachmentStore(context);
+                    Attachment migrated = store.save(bytes, oldName, guessMimeType(oldName));
+                    List<Attachment> list = new ArrayList<>();
+                    list.add(migrated);
+                    entry.setAttachments(list);
+                    attachmentMigrationOccurred = true; // signal loadEntries() to persist new format
+                } catch (Exception ignored) {
+                    // Migration failed — entry loads fine without the attachment
+                    // (corrupted Base64 or disk full; nothing we can do)
+                }
+            }
+        }
         entry.setArchived(obj.optBoolean("archived", false)); // v19
         // v20: checklist items
         JSONArray itemsArr = obj.optJSONArray("checklistItems");
@@ -299,6 +350,27 @@ public class StorageHelper {
         // v8: stamp legacy entries with current time (no updatedAt in old format)
         legacy.setUpdatedAt(System.currentTimeMillis());
         return legacy;
+    }
+
+    /**
+     * Guesses a MIME type from a file extension for use during v9→v24 attachment migration.
+     * Returns "application/octet-stream" as a safe default for unknown extensions.
+     */
+    private static String guessMimeType(String fileName) {
+        if (fileName == null) return "application/octet-stream";
+        String lower = fileName.toLowerCase();
+        if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+        if (lower.endsWith(".png"))  return "image/png";
+        if (lower.endsWith(".gif"))  return "image/gif";
+        if (lower.endsWith(".webp")) return "image/webp";
+        if (lower.endsWith(".pdf"))  return "application/pdf";
+        if (lower.endsWith(".txt"))  return "text/plain";
+        if (lower.endsWith(".doc"))  return "application/msword";
+        if (lower.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        if (lower.endsWith(".xls"))  return "application/vnd.ms-excel";
+        if (lower.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        if (lower.endsWith(".zip"))  return "application/zip";
+        return "application/octet-stream";
     }
 
     // ── V7: PIN attempt, lock, security Q&A, auto-lock ───────────────

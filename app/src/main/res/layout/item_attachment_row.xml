@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Single row in the attachment list inside DetailActivity.
+    Used in both VIEW mode (open button only) and EDIT mode (open + remove buttons).
+
+    Inflated dynamically by DetailActivity.renderAttachmentList().
+    v24: Multiple attachment support.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingTop="6dp"
+    android:paddingBottom="6dp"
+    android:paddingStart="4dp"
+    android:paddingEnd="0dp">
+
+    <!-- File icon -->
+    <ImageView
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        android:src="@drawable/ic_attachment"
+        app:tint="@color/text_secondary"
+        android:contentDescription="Attachment"/>
+
+    <!-- Filename + size -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="4dp">
+
+        <TextView
+            android:id="@+id/tvAttachFileName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_primary"
+            android:textSize="14sp"
+            android:singleLine="true"
+            android:ellipsize="middle"/>
+
+        <TextView
+            android:id="@+id/tvAttachFileSize"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/hint_color"
+            android:textSize="11sp"/>
+
+    </LinearLayout>
+
+    <!-- Open button — always visible when a file is present -->
+    <ImageButton
+        android:id="@+id/btnAttachRowOpen"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:src="@drawable/ic_attachment"
+        android:contentDescription="Open attachment"
+        app:tint="@color/accent"/>
+
+    <!-- Remove button — visible in EDIT mode only, hidden in VIEW mode -->
+    <ImageButton
+        android:id="@+id/btnAttachRowRemove"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:src="@drawable/ic_close"
+        android:contentDescription="Remove attachment"
+        android:visibility="gone"
+        app:tint="@color/text_secondary"/>
+
+</LinearLayout>

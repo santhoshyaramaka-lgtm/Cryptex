@@ -22,6 +22,7 @@
     <color name="input_border_color">#757575</color>
     <color name="switch_on">#2196F3</color>
     <color name="switch_off">#CCCCCC</color>
+    <color name="icon_circle_bg">#8E8E93</color>
 
     <!-- PIN screen -->
     <color name="pin_bg">#0D1117</color>
