@@ -376,9 +376,10 @@ public class StorageHelper {
     // ── V7: PIN attempt, lock, security Q&A, auto-lock ───────────────
     private static final String KEY_PIN_ATTEMPTS = "pin_attempts";
     private static final String KEY_PIN_LOCKED   = "pin_locked";
-    private static final String KEY_SECURITY_Q   = "security_q"; // int index
-    private static final String KEY_SECURITY_A   = "security_a"; // string answer (case-insensitive)
-    private static final String KEY_AUTOLOCK     = "autolock";   // int seconds
+    private static final String KEY_SECURITY_Q      = "security_q"; // int index
+    private static final String KEY_SECURITY_A      = "security_a"; // string answer (case-insensitive)
+    private static final String KEY_SECURITY_Q_CUSTOM = "security_q_custom"; // custom question text (index 2 only)
+    private static final String KEY_AUTOLOCK        = "autolock";   // int seconds
     private static final String KEY_BG_TIMESTAMP = "bg_time";    // long millis
 
     // ── PIN attempt tracking ─────────────────────────────────────────
@@ -410,6 +411,18 @@ public class StorageHelper {
             .putInt(KEY_SECURITY_Q, index)
             .putString(KEY_SECURITY_A, answer.trim().toLowerCase())
             .apply();
+    }
+    /** For custom question (index 2): saves the question text alongside index + answer. */
+    public void setCustomSecurityQuestion(String questionText, String answer) {
+        prefs.edit()
+            .putInt(KEY_SECURITY_Q, 2)
+            .putString(KEY_SECURITY_Q_CUSTOM, questionText.trim())
+            .putString(KEY_SECURITY_A, answer.trim().toLowerCase())
+            .apply();
+    }
+    /** Returns the custom question text, or empty string if not set. */
+    public String getCustomSecurityQuestionText() {
+        return prefs.getString(KEY_SECURITY_Q_CUSTOM, "");
     }
     public int getSecurityQuestionIndex() {
         return prefs.getInt(KEY_SECURITY_Q, -1);

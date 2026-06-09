@@ -1,8 +1,8 @@
 # Cryptex — Project Status & Handover Document
-**Last Updated:** June 5, 2026
+**Last Updated:** June 9, 2026
 **App Name:** Cryptex
-**Current Stable Version:** v24.0 (versionCode 24) — open
-**APK Location:** `Cryptex_Key/Cryptex-v24.0-release.apk` (stable)
+**Current Stable Version:** v25.0 (versionCode 25) — open
+**APK Location:** `Cryptex_Key/Cryptex-v25.0-release.apk` (stable)
 
 ---
 
@@ -26,6 +26,7 @@ Cryptex/
 │       ├── AndroidManifest.xml
 │       ├── java/com/cryptex/app/
 │       │   ├── BaseActivity.java
+│       │   ├── OnboardingActivity.java     ← v25: first-install onboarding (LAUNCHER)
 │       │   ├── Entry.java
 │       │   ├── EntryType.java
 │       │   ├── EntryAdapter.java
@@ -63,11 +64,11 @@ Cryptex/
 
 | Setting | Value |
 |---|---|
-| `compileSdk` | 34 |
+| `compileSdk` | 35 |
 | `minSdk` | 23 |
-| `targetSdk` | 34 |
-| `versionCode` | 24 |
-| `versionName` | "24.0" |
+| `targetSdk` | 35 |
+| `versionCode` | 25 |
+| `versionName` | "25.0" |
 | `minifyEnabled` | **false** (must stay false — see note) |
 | Keystore | `Cryptex_Key/cryptex_release.jks` |
 | Key alias | `cryptex_key` |
@@ -210,7 +211,12 @@ Checklist items are stored in the separate `checklistItems` list, not in field s
 ## 7. Activity & Flow Map
 
 ```
-PinActivity  (LAUNCHER)
+OnboardingActivity  (LAUNCHER)
+    │
+    ├─ Fresh install → 4-step onboarding → PinActivity (PIN setup)
+    └─ Existing user (hasPin = true) → PinActivity immediately (no onboarding shown)
+
+PinActivity
     │
     ├─ First run → PIN setup (set → confirm → MainActivity)
     ├─ Normal → PIN verify (correct → MainActivity)
@@ -277,9 +283,10 @@ Offset  Size    Content
 Defined in `ForgotPinActivity.QUESTIONS[]`:
 1. "What is your planet?"
 2. "How big is the universe?"
-3. "Don't forget smiling"
+3. "Write my own question…" ← index 2 = custom; actual text stored in `security_q_custom` encrypted prefs key
 
 Answer stored as `trim().toLowerCase()` in `EncryptedSharedPreferences`.
+Custom question text stored as-is (not lowercased) in `security_q_custom`.
 
 ---
 
@@ -312,6 +319,14 @@ Answer stored as `trim().toLowerCase()` in `EncryptedSharedPreferences`.
 | `backup_pass` | String | Last used backup password |
 | `last_export_time` | Long | Timestamp of last successful export |
 | `biometric_enabled` | Boolean | Whether biometric unlock is active |
+| `security_q_custom` | String | Custom question text when `security_q` = 2; stored as-is (not lowercased) |
+
+### Plain SharedPreferences (not encrypted)
+
+| Prefs file | Key | Type | Purpose |
+|---|---|---|---|
+| `cryptex_onboarding` | `onboarding_done` | Boolean | Set to `true` after onboarding step 3; prevents re-showing onboarding |
+| `cryptex_tips` | `backup_tip_shown` | Boolean | Set to `true` after backup tip dialog is shown once in `MainActivity` |
 
 ### Entry JSON fields (v19.0)
 Each entry in the `entries` JSON array includes:
@@ -640,6 +655,82 @@ After a correct PIN was entered, `goToMain()` in `PinActivity` launched `MainAct
 
 ---
 
+## 12p. V25.0 — Completed Features ✅ STABLE — Closed June 8, 2026
+
+### API 35 (Android 15) Target
+- [x] **`compileSdk` + `targetSdk` bumped to 35** — required for Play Store submission (Google enforces targetSdk ≥ 35 for new apps)
+- [x] **Edge-to-edge opt-out** — `android:windowOptOutEdgeToEdgeEnforcement=true` added to `Theme.MS` in `themes.xml`; this is the reliable API 35 opt-out (Java-level `setDecorFitsSystemWindows` is insufficient on API 35 as enforcement happens at the theme/window level before any Java code runs); applies to all activities automatically
+- [x] **`registerReceiver` export flag** — `ContextCompat.registerReceiver(..., RECEIVER_NOT_EXPORTED)` replaces bare `registerReceiver()` for the `ACTION_SCREEN_OFF` receiver; required best practice for API 34+
+- [x] **AGP warning suppressed** — `android.suppressUnsupportedCompileSdk=35` added to `gradle.properties`
+- [x] `versionCode 25`, `versionName "25.0"`, `app_version` string updated to `"Version 25.0"`
+
+### Onboarding Flow (First Install)
+- [x] **`OnboardingActivity`** — new LAUNCHER activity; existing users (already have a PIN) detected on first run after upgrade and silently redirected to `PinActivity`; `onboarding_done` flag stored in plain `SharedPreferences` (separate from encrypted storage)
+- [x] **Step 0 — User Agreement** — full scrollable agreement covering: data stays on device, PIN responsibility, all recovery paths (✅/❌), data security (only leaked if password is known), no-warranty/liability disclaimer, user responsibilities; "I Agree & Continue" button locked until user scrolls to bottom
+- [x] **Step 1 — How It Works** — feature overview: AES-256 encryption, no internet/cloud, PIN + fingerprint, security question recovery, encrypted backup
+- [x] **Step 2 — Security Question Setup** — mandatory; spinner picks from `ForgotPinActivity.QUESTIONS[]` (2 presets + "Write my own…"); selecting index 2 reveals a custom question text field; answer field validated (not empty); saved via `storage.setSecurityQuestion()` or `storage.setCustomSecurityQuestion()`; cannot proceed without both fields filled
+- [x] **Step 3 — Security Reminder** — bold screen explaining data can only be accessed if someone knows the PIN or backup password; 4 action tips; "I Understand — Set My PIN" marks `onboarding_done=true` and launches `PinActivity`
+- [x] **Back press handling** — step 0: exits app; steps 1–3: returns to previous step
+- [x] **BaseActivity exclusions** — `OnboardingActivity` added to auto-lock check, encryption warning, and auto-backup trigger exclusions (same as `PinActivity`)
+- [x] **`AndroidManifest.xml`** — `OnboardingActivity` is the new LAUNCHER; `PinActivity` changed to `exported="false"`
+
+### Custom Security Question (index 2)
+- [x] **"Write my own question…"** added as index 2 in `ForgotPinActivity.QUESTIONS[]`
+- [x] **`OnboardingActivity`** — selecting index 2 unhides `tilCustomQuestion` / `etCustomQuestion`; validates custom text is not empty; saves via `storage.setCustomSecurityQuestion(questionText, answer)`
+- [x] **`SettingsActivity`** — same index 2 detection; `showCustomSecurityQInput()` dialog collects custom text then calls `showSecurityAInput(index, customText)`
+- [x] **`ForgotPinActivity`** — when `qIndex == CUSTOM_QUESTION_INDEX` shows `storage.getCustomSecurityQuestionText()` as the displayed question
+- [x] **`StorageHelper`** — `KEY_SECURITY_Q_CUSTOM = "security_q_custom"` in encrypted prefs; `setCustomSecurityQuestion()` and `getCustomSecurityQuestionText()` APIs added
+
+### Backup Tip Dialog
+- [x] **One-time dialog** shown on first `MainActivity` open after install
+- [x] **Skip condition** — not shown if user already has both `hasBackupPassword()` and `hasBackupUri()` set (already configured backup)
+- [x] **Content** — explains data is local-only; step-by-step: Export Backup → enable Auto-Backup
+- [x] **Actions** — "Set Up Backup" launches `SettingsActivity`; "Later" dismisses
+- [x] **Flag** — `backup_tip_shown` in plain `cryptex_tips` SharedPreferences; set on any dismiss
+
+### Rotating PIN Taglines
+- [x] **8 taglines** defined in `<string-array name="pin_taglines">` in `strings.xml`
+- [x] **Random pick** — `new Random().nextInt(taglines.length)` every time `PinActivity` opens
+- [x] **Layout** — `tvTagline` (13sp, `#99FFFFFF`, `gravity="center"`) placed in the centred zone just above `tvPinTitle`; no divider
+- [x] **Header** — small 40dp app icon top-left in `activity_pin.xml`; icon and tagline are visually separated (icon top-left, tagline centred mid-screen)
+
+### Bulk PDF Export from TypeListActivity
+- [x] **📄 button in multi-select toolbar** — long-press entries → select → tap 📄 (alongside existing 🗑️ delete)
+- [x] **Checklist entries auto-excluded** — checklist type filtered out before sending IDs; user warned if all selected were checklist
+- [x] **Confirm dialog** — shows count and skip warning before proceeding
+- [x] **`SettingsActivity` PDF-only mode** — `isPdfOnlyMode` flag; when launched with `pdf_entry_ids` Intent extra, skips all Settings UI, goes straight to `showPdfPasswordDialog()`, then `finish()` after share sheet
+- [x] **Cancel / back = `finish()`** — no blank Settings screen left behind
+- [x] **`onResume()` skip** — auto-lock check and card refresh bypassed in PDF-only mode
+- [x] **Existing Settings → Export as PDF unchanged** — `isPdfOnlyMode` is `false` by default; the normal full-export flow is not touched
+
+### Note Type — Clean Paper UI
+- [x] **No boxes, no labels** — Note entries bypass `buildFieldRow()` entirely; title and body are plain borderless fields on the page background
+- [x] **Title** — bold 22sp, no background, thin divider below; `AllCaps` filter retained
+- [x] **Body (field7)** — 15sp, `lineSpacingMultiplier=1.4`, no `maxLines` limit — text flows as long as needed; outer `ScrollView` scrolls (not a nested scroll-in-box)
+- [x] **Edit mode** — cursor goes to title on new notes, body on existing; hints "Note title…" / "Start writing…"
+- [x] **Long-press to copy** — title and body both support long-press clipboard copy with 30s auto-clear
+- [x] **All other types unaffected** — `buildFieldRow()` not changed; Website/Card/Bank/Personal/PIN still use boxed fields
+- [x] **`saveEntry()` unaffected** — reads `editViews[0]` and `editViews[6]` which are still populated correctly
+
+### Home Screen Search — Back Press Fix
+- [x] **3-step back press** — search bar has text + keyboard open + results found: back 1 = keyboard closes; back 2 = clears search → tile grid; back 3 = exits app
+- [x] **No results case** — back immediately clears search → tile grid (no keyboard step)
+- [x] **`searchKeyboardDismissed` flag** — tracks whether keyboard was already dismissed; reset when user types again
+- [x] **`InputMethodManager`** — used to reliably dismiss keyboard on first back
+
+### Attachment UI Simplification
+- [x] **No header, no count, no separator** — `attachmentDivider` and `attachmentHeader` removed from layout entirely
+- [x] **No colours** — all file icons use flat grey `#757575`; no per-type colour coding
+- [x] **No share button** — `btnAttachRowShare` removed from `item_attachment_row.xml`
+- [x] **1 file** — shows directly as a single row: `[📎]  filename.pdf   24 KB`
+- [x] **2+ files, collapsed** — single tappable summary row: `[📎]  3 files  ›`; tap expands
+- [x] **2+ files, expanded** — collapse header `3 files ▲` + all file rows below; tap header to collapse
+- [x] **Edit mode** — always fully expanded; remove button (🗑️) with confirm dialog per row
+- [x] **`attachmentsExpanded` flag** — persists expand/collapse state for the current screen session
+- [x] **`shareSavedAttachment()` removed** — no longer needed
+
+---
+
 ## 13. Version History
 
 | Version | Date | Key Features Added |
@@ -667,3 +758,4 @@ After a correct PIN was entered, `goToMain()` in `PinActivity` launched `MainAct
 | v22.0 | Jun 1, 2026 | **Background-thread save refactor** — serialize JSON on main thread, write on background thread; `finish()` runs only after disk write completes (eliminates stale-read race). **Checklist flicker fix** — `toggleChecklistItemInPlace()` replaces full `renderChecklist()` rebuild on checkbox toggle. **RecyclerView animator disabled** — `MainActivity` and `TypeListActivity` set `setItemAnimator(null)` to prevent card flash on list refresh. `versionCode 22`, `versionName "22.0"`. |
 | v23.0 | Jun 4, 2026 | **Label standardisation** — "Website / App" renamed to "Website" in `EntryType.getDisplayName()`, filter sheet, and type picker sheet. `versionCode 23`, `versionName "23.0"`. |
 | v24.0 | Jun 5, 2026 | **Multi-attachment support** — `Attachment` model + `AttachmentStore` (Android Keystore `EncryptedFile`, per-attachment `.enc` files); `DetailActivity` reworked for multiple attachments (async add/open/share/remove, size limits, pending state, cleanup on delete/archive). **Backup v2 ZIP `.cxb`** — ZIP-format backup with `entries.json` + per-attachment blobs, single PBKDF2 key, backward-compatible import. **App icon redesign** — Chrome C lettermark (Georgia Bold glyph, chrome gradient) over vault door on `#D8DCDF` grey background; 4 gold cardinal bolts, teal accent rings, keyhole in C gap. **PIN screen icon** — 88 dp app icon displayed above "Enter PIN" title on `PinActivity`. `versionCode 24`, `versionName "24.0"`. |
+| v25.0 | Jun 8, 2026 | **API 35 target** — `compileSdk`/`targetSdk` bumped to 35; edge-to-edge opt-out in `Theme.MS`; `registerReceiver` export flag fixed; AGP warning suppressed. **Onboarding flow** — 4-step first-install experience: User Agreement (scroll-to-unlock), How It Works, mandatory Security Question setup (supports "Write my own…" custom question), Security Reminder; existing users silently bypassed; `OnboardingActivity` is new LAUNCHER; `PinActivity` set `exported=false`. **Custom security question** — index 2 = "Write my own…"; custom text stored in `security_q_custom` encrypted prefs; supported in onboarding, Settings, and ForgotPin. **Backup tip dialog** — one-time dialog on first `MainActivity` open; skipped if backup already configured. **Rotating PIN taglines** — 8 privacy-themed taglines picked randomly each time the lock screen opens; small top-left icon; tagline centred above PIN title; no divider. **Bulk PDF export from TypeListActivity** — long-press entries → select → 📄 button → password → PDF of selected entries only; `SettingsActivity` PDF-only mode (`isPdfOnlyMode` flag); existing Settings PDF export unchanged. **Note type clean UI** — no boxes, no labels; bold 22sp title + full-width body with 1.4× line spacing; no `maxLines`; all other types unchanged. **Home search back press fix** — 3-step: keyboard close → clear search → exit app; `searchKeyboardDismissed` flag prevents "does nothing" middle step. **Attachment UI simplification** — no header/count/separator/colours/share button; 1 file shown directly; 2+ files collapsed to `N files ›` summary with tap-to-expand; edit mode always expanded with confirm-on-remove. `versionCode 25`, `versionName "25.0"`. |

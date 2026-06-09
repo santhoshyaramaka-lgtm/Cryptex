@@ -14,6 +14,8 @@ import androidx.biometric.BiometricManager;
 import androidx.biometric.BiometricPrompt;
 import androidx.core.content.ContextCompat;
 
+import java.util.Random;
+
 public class PinActivity extends BaseActivity {
 
     private StorageHelper storage;
@@ -49,12 +51,19 @@ public class PinActivity extends BaseActivity {
 
         storage = new StorageHelper(this);
 
-        layoutDots      = findViewById(R.id.layoutDots);
-        tvAttempts      = findViewById(R.id.tvAttempts);
-        tvPinTitle      = findViewById(R.id.tvPinTitle);
-        btnForgotPin    = findViewById(R.id.btnForgotPin);
+        layoutDots         = findViewById(R.id.layoutDots);
+        tvAttempts         = findViewById(R.id.tvAttempts);
+        tvPinTitle         = findViewById(R.id.tvPinTitle);
+        btnForgotPin       = findViewById(R.id.btnForgotPin);
         btnForgotPinLocked = findViewById(R.id.btnForgotPinLocked);
-        layoutLocked    = findViewById(R.id.layoutLocked);
+        layoutLocked       = findViewById(R.id.layoutLocked);
+
+        // Rotating tagline — pick a random one each time lock screen opens
+        TextView tvTagline = findViewById(R.id.tvTagline);
+        if (tvTagline != null) {
+            String[] taglines = getResources().getStringArray(R.array.pin_taglines);
+            tvTagline.setText(taglines[new Random().nextInt(taglines.length)]);
+        }
 
         dots = new View[]{
                 findViewById(R.id.dot1),

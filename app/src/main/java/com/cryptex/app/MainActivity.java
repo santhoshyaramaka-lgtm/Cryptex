@@ -1,11 +1,14 @@
 package com.cryptex.app;
 
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.GridLayout;
 import android.widget.ImageButton;
@@ -13,6 +16,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -33,6 +37,7 @@ public class MainActivity extends BaseActivity {
     private TextView         tvSearchCount;
     private RecyclerView     rvSearchResults;
     private EditText         etSearch;
+    private boolean          searchKeyboardDismissed = false; // tracks if we already dismissed keyboard
 
     // Cache the last-rendered tile counts so we only rebuild tiles when
     // something actually changed — avoids unnecessary XML inflation on every resume
@@ -48,6 +53,8 @@ public class MainActivity extends BaseActivity {
         storage       = StorageHelper.getInstance(this);
         allEntries    = new ArrayList<>();
         searchResults = new ArrayList<>();
+
+        showBackupTipIfNeeded();
 
         // ── Bind views ────────────────────────────────────────────────────────
         tileGrid            = findViewById(R.id.tileGrid);
@@ -77,11 +84,43 @@ public class MainActivity extends BaseActivity {
         }, storage, allEntries, null); // v8: no favourite re-sort needed on home search
         rvSearchResults.setAdapter(searchAdapter);
 
+        // ── Back press ────────────────────────────────────────────────────────
+        // Case 1: search active + keyboard open + results found
+        //         → 1st back: dismiss keyboard (flag set), results stay visible
+        //         → 2nd back: clear search → tile grid
+        // Case 2: search active + no results OR no keyboard
+        //         → 1st back: clear search → tile grid immediately
+        // Case 3: search empty → exit app
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                String query = etSearch.getText().toString();
+                if (!query.isEmpty()) {
+                    boolean hasResults = !searchResults.isEmpty();
+                    if (hasResults && !searchKeyboardDismissed) {
+                        // First back: hide keyboard, remember we did so
+                        searchKeyboardDismissed = true;
+                        etSearch.clearFocus();
+                        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                        if (imm != null) imm.hideSoftInputFromWindow(etSearch.getWindowToken(), 0);
+                    } else {
+                        // Second back (or no results): clear search → tile grid
+                        searchKeyboardDismissed = false;
+                        etSearch.setText("");
+                    }
+                } else {
+                    setEnabled(false);
+                    getOnBackPressedDispatcher().onBackPressed();
+                }
+            }
+        });
+
         // ── Search watcher ────────────────────────────────────────────────────
         etSearch.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int i, int i1, int i2) {}
             @Override public void afterTextChanged(Editable s) {}
             @Override public void onTextChanged(CharSequence s, int i, int i1, int i2) {
+                searchKeyboardDismissed = false; // user is typing again — reset flag
                 String query = s.toString().trim();
                 if (query.isEmpty()) {
                     showTileGrid();
@@ -113,6 +152,39 @@ public class MainActivity extends BaseActivity {
         if (!query.isEmpty()) {
             showSearchResults(query);
         }
+    }
+
+    // ── Backup tip dialog ─────────────────────────────────────────────────────
+
+    private static final String PREFS_TIPS     = "cryptex_tips";
+    private static final String KEY_BACKUP_TIP = "backup_tip_shown";
+
+    private void showBackupTipIfNeeded() {
+        // Skip if already shown
+        SharedPreferences tips = getSharedPreferences(PREFS_TIPS, Context.MODE_PRIVATE);
+        if (tips.getBoolean(KEY_BACKUP_TIP, false)) return;
+
+        // Skip if user already has a backup configured (existing users upgrading)
+        if (storage.hasBackupPassword() && storage.hasBackupUri()) {
+            tips.edit().putBoolean(KEY_BACKUP_TIP, true).apply();
+            return;
+        }
+
+        tips.edit().putBoolean(KEY_BACKUP_TIP, true).apply();
+
+        androidx.appcompat.app.AlertDialog dialog =
+                new androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle(R.string.backup_tip_title)
+                        .setMessage(R.string.backup_tip_message)
+                        .setPositiveButton(R.string.backup_tip_setup, (d, w) ->
+                                startActivity(new Intent(this, SettingsActivity.class)))
+                        .setNegativeButton(R.string.backup_tip_later, null)
+                        .setCancelable(false)
+                        .show();
+        // Override button colour — CryptexAlertDialog uses accent (#000000) which looks disabled
+        int blue = 0xFF2196F3;
+        dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setTextColor(blue);
+        dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_NEGATIVE).setTextColor(blue);
     }
 
     // ── Tile Grid ─────────────────────────────────────────────────────────────

@@ -5,8 +5,11 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.net.Uri;
+import android.os.Bundle;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
+import androidx.core.view.WindowCompat;
 
 import java.io.OutputStream;
 import java.util.List;
@@ -41,6 +44,15 @@ public abstract class BaseActivity extends AppCompatActivity {
 
     private StorageHelper baseStorage;
 
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        // API 35 forces edge-to-edge by default (content drawn behind system bars).
+        // Setting decorFitsSystemWindows=true restores the traditional behaviour
+        // where the system bars reserve space so layouts are never obscured.
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), true);
+    }
+
     // ── Shared auto-lock check ────────────────────────────────────────────────
     /**
      * Returns true if the app should lock immediately.
@@ -50,7 +62,7 @@ public abstract class BaseActivity extends AppCompatActivity {
      * true they must return immediately without doing any further work.
      */
     protected boolean checkAndHandleAutoLock() {
-        if (this instanceof PinActivity) return false;
+        if (this instanceof PinActivity || this instanceof OnboardingActivity) return false;
         if (baseStorage == null) baseStorage = StorageHelper.getInstance(this);
         boolean forcedLock = baseStorage.isForcedLock();
         int  timeout = baseStorage.getAutoLockTimeout();
@@ -92,7 +104,7 @@ public abstract class BaseActivity extends AppCompatActivity {
 
         // Warn user if encrypted storage failed to initialise
         if (baseStorage.isEncryptionFailed() && !encryptionWarningShown
-                && !(this instanceof PinActivity)) {
+                && !(this instanceof PinActivity) && !(this instanceof OnboardingActivity)) {
             encryptionWarningShown = true;
             new androidx.appcompat.app.AlertDialog.Builder(this)
                     .setTitle("⚠️ Security Warning")
@@ -105,7 +117,8 @@ public abstract class BaseActivity extends AppCompatActivity {
                     .show();
         }
         IntentFilter filter = new IntentFilter(Intent.ACTION_SCREEN_OFF);
-        registerReceiver(screenOffReceiver, filter);
+        ContextCompat.registerReceiver(this, screenOffReceiver, filter,
+                ContextCompat.RECEIVER_NOT_EXPORTED);
 
         // Re-take persistable URI permission on every resume.
         // SAF persistable permissions can be silently dropped by Android after
@@ -172,7 +185,7 @@ public abstract class BaseActivity extends AppCompatActivity {
      * Excluded from PinActivity: a lock screen must never trigger a backup.
      */
     private void triggerAutoBackup() {
-        if (this instanceof PinActivity) return;
+        if (this instanceof PinActivity || this instanceof OnboardingActivity) return;
         if (baseStorage == null) baseStorage = StorageHelper.getInstance(this);
 
         if (!baseStorage.isAutoBackupEnabled()) return;

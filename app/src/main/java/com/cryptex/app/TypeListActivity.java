@@ -99,6 +99,9 @@ public class TypeListActivity extends BaseActivity {
         // Cancel selection
         findViewById(R.id.btnCancelSelection).setOnClickListener(v -> exitSelectionMode());
 
+        // Export selected as PDF
+        findViewById(R.id.btnExportSelectionPdf).setOnClickListener(v -> exportSelectedAsPdf());
+
         // FAB — add new entry (hidden in archive view) / delete selected
         fab.setOnClickListener(v -> {
             if (adapter.isInSelectionMode()) {
@@ -275,6 +278,50 @@ public class TypeListActivity extends BaseActivity {
                 .setTitle("Delete Entries")
                 .setMessage(msg)
                 .setPositiveButton("Delete", (d, w) -> deleteSelected())
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void exportSelectedAsPdf() {
+        Set<String> ids = adapter.getSelectedIds();
+        if (ids.isEmpty()) return;
+
+        // Exclude checklist entries — PDF does not support them
+        ArrayList<String> exportIds = new ArrayList<>();
+        for (String id : ids) {
+            for (Entry e : allEntries) {
+                if (e.getId().equals(id) && !EntryType.CHECKLIST.equals(e.getType())) {
+                    exportIds.add(id);
+                    break;
+                }
+            }
+        }
+
+        if (exportIds.isEmpty()) {
+            new MaterialAlertDialogBuilder(this)
+                    .setTitle("Export as PDF")
+                    .setMessage("Checklist entries cannot be exported as PDF. Please select other entry types.")
+                    .setPositiveButton("OK", null)
+                    .show();
+            return;
+        }
+
+        int skipped = ids.size() - exportIds.size();
+        String msg = exportIds.size() == 1
+                ? "Export 1 entry as a password-protected PDF?"
+                : "Export " + exportIds.size() + " entries as a password-protected PDF?";
+        if (skipped > 0) msg += "\n\n(" + skipped + " checklist item(s) will be skipped.)";
+
+        final String finalMsg = msg;
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("Export as PDF")
+                .setMessage(finalMsg)
+                .setPositiveButton("Continue →", (d, w) -> {
+                    Intent intent = new Intent(this, SettingsActivity.class);
+                    intent.putStringArrayListExtra("pdf_entry_ids", exportIds);
+                    startActivity(intent);
+                    exitSelectionMode();
+                })
                 .setNegativeButton("Cancel", null)
                 .show();
     }

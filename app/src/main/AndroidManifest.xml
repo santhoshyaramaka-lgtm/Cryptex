@@ -13,8 +13,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.MS">
 
+        <!-- Onboarding: LAUNCHER — redirects existing users immediately, shows onboarding only on fresh install -->
         <activity
-            android:name=".PinActivity"
+            android:name=".OnboardingActivity"
             android:exported="true"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
@@ -22,6 +23,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".PinActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
 
         <activity
             android:name=".MainActivity"
