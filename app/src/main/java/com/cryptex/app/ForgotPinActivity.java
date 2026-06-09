@@ -12,12 +12,14 @@ import androidx.appcompat.app.AppCompatActivity;
 
 public class ForgotPinActivity extends BaseActivity {
 
-    // The 3 custom security questions (index matches what is stored in prefs)
+    // The security questions (index matches what is stored in prefs).
+    // Index 2 = custom — actual text stored separately in KEY_SECURITY_Q_CUSTOM.
     public static final String[] QUESTIONS = {
             "What is your planet?",
             "How big is the universe?",
-            "Don't forget smiling"
+            "Write my own question…"
     };
+    public static final int CUSTOM_QUESTION_INDEX = 2;
 
     private StorageHelper storage;
 
@@ -68,7 +70,11 @@ public class ForgotPinActivity extends BaseActivity {
 
         // ── Load and display the stored security question ─────────────────────
         int qIndex = storage.getSecurityQuestionIndex();
-        if (qIndex >= 0 && qIndex < QUESTIONS.length) {
+        if (qIndex == ForgotPinActivity.CUSTOM_QUESTION_INDEX) {
+            // Custom question — show the user's own text
+            String custom = storage.getCustomSecurityQuestionText();
+            tvSecurityQuestion.setText(custom.isEmpty() ? "Custom question" : custom);
+        } else if (qIndex >= 0 && qIndex < QUESTIONS.length) {
             tvSecurityQuestion.setText(QUESTIONS[qIndex]);
         } else {
             // No security question set — should not normally happen

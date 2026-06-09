@@ -33,6 +33,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -40,6 +41,10 @@ import java.util.Locale;
 public class SettingsActivity extends BaseActivity {
 
     private StorageHelper storage;
+
+    // True when this activity was opened only to host a PDF export from TypeListActivity
+    // In this mode the full Settings UI is not inflated — finish() after share sheet
+    private boolean isPdfOnlyMode = false;
 
     // Pending password — held between password dialog and SAF picker callback
     private String pendingExportPassword = null;
@@ -104,6 +109,22 @@ public class SettingsActivity extends BaseActivity {
 
         storage = StorageHelper.getInstance(this);
 
+        // If launched from TypeListActivity with specific entry IDs → skip to PDF password dialog
+        ArrayList<String> pdfEntryIds = getIntent().getStringArrayListExtra("pdf_entry_ids");
+        if (pdfEntryIds != null && !pdfEntryIds.isEmpty()) {
+            isPdfOnlyMode = true;
+            List<Entry> selected = new java.util.ArrayList<>();
+            for (Entry e : storage.loadEntries()) {
+                if (pdfEntryIds.contains(e.getId())) selected.add(e);
+            }
+            if (!selected.isEmpty()) {
+                new android.os.Handler().postDelayed(() -> showPdfPasswordDialog(selected), 200);
+            } else {
+                finish();
+            }
+            return; // skip wiring all the Settings UI — this activity is just a PDF host
+        }
+
         findViewById(R.id.btnBack).setOnClickListener(v -> finish());
         findViewById(R.id.cardChangePin).setOnClickListener(v -> showCurrentPinDialog());
         findViewById(R.id.cardExport).setOnClickListener(v -> showExportPasswordDialog());
@@ -161,6 +182,7 @@ public class SettingsActivity extends BaseActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        if (isPdfOnlyMode) return; // PDF-only mode — no auto-lock check, no card refresh
         if (checkAndHandleAutoLock()) return;
         updateBackupCard();
     }
@@ -473,7 +495,10 @@ public class SettingsActivity extends BaseActivity {
     private void updateSecurityQValue() {
         TextView tv = findViewById(R.id.tvSecurityQValue);
         int idx = storage.getSecurityQuestionIndex();
-        if (idx >= 0 && idx < ForgotPinActivity.QUESTIONS.length) {
+        if (idx == ForgotPinActivity.CUSTOM_QUESTION_INDEX) {
+            String custom = storage.getCustomSecurityQuestionText();
+            tv.setText(custom.isEmpty() ? ForgotPinActivity.QUESTIONS[idx] : custom);
+        } else if (idx >= 0 && idx < ForgotPinActivity.QUESTIONS.length) {
             tv.setText(ForgotPinActivity.QUESTIONS[idx]);
         } else {
             tv.setText(R.string.security_question_not_set);
@@ -499,12 +524,46 @@ public class SettingsActivity extends BaseActivity {
                 })
                 .setView(layout)
                 .setPositiveButton(R.string.next, (d, w) -> {
-                    showSecurityAInput(selected[0]);
+                    if (selected[0] == ForgotPinActivity.CUSTOM_QUESTION_INDEX) {
+                        showCustomSecurityQInput();
+                    } else {
+                        showSecurityAInput(selected[0], null);
+                    }
                 })
                 .setNegativeButton(R.string.cancel, null)
                 .show();
     }
-    private void showSecurityAInput(int qIndex) {
+    private void showCustomSecurityQInput() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(20);
+        layout.setPadding(pad, dp(8), pad, 0);
+        TextView tvQLabel = new TextView(this);
+        tvQLabel.setText("Your question:");
+        tvQLabel.setPadding(0, 0, 0, dp(4));
+        layout.addView(tvQLabel);
+        EditText etQuestion = new EditText(this);
+        etQuestion.setHint("Type your question…");
+        etQuestion.setText(storage.getCustomSecurityQuestionText());
+        layout.addView(etQuestion);
+        AlertDialog dlg = new MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.security_question)
+                .setView(layout)
+                .setPositiveButton(R.string.next, null)
+                .setNegativeButton(R.string.cancel, null)
+                .create();
+        dlg.show();
+        dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String q = etQuestion.getText().toString().trim();
+            if (q.isEmpty()) {
+                etQuestion.setError("Question cannot be empty.");
+                return;
+            }
+            dlg.dismiss();
+            showSecurityAInput(ForgotPinActivity.CUSTOM_QUESTION_INDEX, q);
+        });
+    }
+    private void showSecurityAInput(int qIndex, String customQuestionText) {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         int pad = dp(20);
@@ -530,7 +589,11 @@ public class SettingsActivity extends BaseActivity {
                 et.setError(getString(R.string.security_answer_empty));
                 return; // dialog stays open
             }
-            storage.setSecurityQuestion(qIndex, ans);
+            if (qIndex == ForgotPinActivity.CUSTOM_QUESTION_INDEX && customQuestionText != null) {
+                storage.setCustomSecurityQuestion(customQuestionText, ans);
+            } else {
+                storage.setSecurityQuestion(qIndex, ans);
+            }
             updateSecurityQValue();
             dlg.dismiss();
         });
@@ -778,7 +841,8 @@ public class SettingsActivity extends BaseActivity {
                 .setTitle(getString(R.string.pdf_password_title))
                 .setView(layout)
                 .setPositiveButton(getString(R.string.generate_pdf), null)
-                .setNegativeButton(getString(R.string.cancel), null)
+                .setNegativeButton(getString(R.string.cancel), (d, w) -> { if (isPdfOnlyMode) finish(); })
+                .setOnCancelListener(d -> { if (isPdfOnlyMode) finish(); })
                 .create();
         dlg.show();
         dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
@@ -1017,6 +1081,7 @@ public class SettingsActivity extends BaseActivity {
             shareIntent.putExtra(Intent.EXTRA_STREAM, pdfUri);
             shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             startActivity(Intent.createChooser(shareIntent, getString(R.string.pdf_share)));
+            if (isPdfOnlyMode) finish();
         } catch (Exception ex) {
             Toast.makeText(this,
                     getString(R.string.pdf_fail) + "\n" + ex.getMessage(),

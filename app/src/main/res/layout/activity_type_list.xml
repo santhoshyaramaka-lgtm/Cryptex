@@ -108,6 +108,16 @@
                 android:textStyle="bold"
                 android:text="0 selected"/>
 
+            <!-- Export selected as PDF -->
+            <ImageButton
+                android:id="@+id/btnExportSelectionPdf"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_share"
+                android:contentDescription="Export as PDF"
+                app:tint="@color/white"/>
+
         </LinearLayout>
 
         <!-- Search Bar -->

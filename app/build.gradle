@@ -64,14 +64,14 @@ plugins {
 
 android {
     namespace 'com.cryptex.app'
-    compileSdk 34
+    compileSdk 35
 
     defaultConfig {
         applicationId "com.cryptex.app"
         minSdk 23
-        targetSdk 34
-        versionCode 24
-        versionName "24.0"
+        targetSdk 35
+        versionCode 25
+        versionName "25.0"
     }
 
     signingConfigs {

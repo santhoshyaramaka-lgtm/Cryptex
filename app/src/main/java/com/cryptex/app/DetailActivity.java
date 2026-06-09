@@ -15,6 +15,7 @@ import android.view.View;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -97,6 +98,7 @@ public class DetailActivity extends BaseActivity {
     // v24: Attachment section views — bound in setupAttachmentSection()
     private LinearLayout attachmentListContainer;
     private TextView     btnAddAttachment;
+    private boolean      attachmentsExpanded = false; // VIEW mode: 2+ files collapsed by default
 
     // v12: Created date label shown in VIEW mode
     private TextView    tvCreatedAt;
@@ -322,6 +324,15 @@ public class DetailActivity extends BaseActivity {
             } else {
                 renderChecklist();
             }
+        } else if (EntryType.NOTE.equals(entryType)) {
+            // Note type — clean paper-like UI, no boxes, no labels
+            buildNoteUI(container);
+            if (existingEntry != null) {
+                if (editViews[0] != null) editViews[0].setText(existingEntry.getField1());
+                if (editViews[6] != null) editViews[6].setText(existingEntry.getField7());
+                if (viewTexts[0] != null) viewTexts[0].setText(existingEntry.getField1());
+                if (viewTexts[6] != null) viewTexts[6].setText(existingEntry.getField7());
+            }
         } else {
             // All other types — normal field rows
             String[]  labels = EntryType.getFieldLabels(entryType);
@@ -406,6 +417,12 @@ public class DetailActivity extends BaseActivity {
                 btnDelete.setVisibility(View.GONE);
                 btnArchive.setVisibility(View.GONE);
             }
+            return;
+        }
+
+        // Note type — clean paper UI, no boxes
+        if (EntryType.NOTE.equals(entryType)) {
+            applyNoteModeUI(tvScreenTitle);
             return;
         }
 
@@ -934,6 +951,164 @@ public class DetailActivity extends BaseActivity {
             storage.saveEntriesJson(json);
             storage.setBackupPending(true);
         }).start();
+    }
+
+    // ── Note-type: clean paper UI ─────────────────────────────────────────────
+
+    /**
+     * Builds the Note-specific UI — no boxes, no labels, no borders.
+     * Title: bold heading. Body: plain flowing text. Fills editViews[0]/[6] and viewTexts[0]/[6].
+     */
+    private void buildNoteUI(LinearLayout container) {
+        int padH = dpToPx(20);
+        int padV = dpToPx(16);
+        container.setPadding(padH, padV, padH, padV);
+
+        // ── Title ─────────────────────────────────────────────────────────────
+        // VIEW text
+        TextView tvTitle = new TextView(this);
+        tvTitle.setTextSize(22f);
+        tvTitle.setTextColor(getResources().getColor(R.color.text_primary));
+        tvTitle.setTypeface(tvTitle.getTypeface(), android.graphics.Typeface.BOLD);
+        tvTitle.setBackground(null);
+        tvTitle.setPadding(0, 0, 0, dpToPx(4));
+        LinearLayout.LayoutParams titleVP = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        tvTitle.setLayoutParams(titleVP);
+        // Long-press to copy title
+        tvTitle.setLongClickable(true);
+        tvTitle.setOnLongClickListener(v -> {
+            String text = tvTitle.getText().toString();
+            if (text.isEmpty()) { Toast.makeText(this, "Nothing to copy", Toast.LENGTH_SHORT).show(); return true; }
+            ClipboardManager cb = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            cb.setPrimaryClip(ClipData.newPlainText("Title", text));
+            Toast.makeText(this, "Copied! Clears in 30s", Toast.LENGTH_SHORT).show();
+            if (clipboardClearRunnable != null) clipboardHandler.removeCallbacks(clipboardClearRunnable);
+            clipboardClearRunnable = () -> { ClipboardManager c2 = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE); if (c2 != null) c2.setPrimaryClip(ClipData.newPlainText("", "")); };
+            clipboardHandler.postDelayed(clipboardClearRunnable, CLIPBOARD_CLEAR_DELAY_MS);
+            return true;
+        });
+        viewTexts[0] = tvTitle;
+        container.addView(tvTitle);
+
+        // EDIT text
+        EditText etTitle = new EditText(this);
+        etTitle.setTextSize(22f);
+        etTitle.setTextColor(getResources().getColor(R.color.input_text));
+        etTitle.setHintTextColor(getResources().getColor(R.color.hint_color));
+        etTitle.setHint("Note title...");
+        etTitle.setBackground(null);
+        etTitle.setPadding(0, 0, 0, dpToPx(4));
+        etTitle.setSingleLine(true);
+        etTitle.setTypeface(etTitle.getTypeface(), android.graphics.Typeface.BOLD);
+        etTitle.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
+        etTitle.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.AllCaps()});
+        etTitle.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        etTitle.setVisibility(View.GONE);
+        editViews[0] = etTitle;
+        container.addView(etTitle);
+
+        // Divider
+        View divider = new View(this);
+        divider.setBackgroundColor(getResources().getColor(R.color.text_secondary));
+        LinearLayout.LayoutParams divP = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(1));
+        divP.topMargin = dpToPx(8);
+        divP.bottomMargin = dpToPx(12);
+        divider.setLayoutParams(divP);
+        container.addView(divider);
+
+        // ── Body (field7 = Notes) ─────────────────────────────────────────────
+        // VIEW text
+        TextView tvBody = new TextView(this);
+        tvBody.setTextSize(15f);
+        tvBody.setTextColor(getResources().getColor(R.color.text_primary));
+        tvBody.setBackground(null);
+        tvBody.setPadding(0, 0, 0, 0);
+        tvBody.setLineSpacing(0, 1.4f);
+        LinearLayout.LayoutParams bodyVP = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        tvBody.setLayoutParams(bodyVP);
+        tvBody.setOnLongClickListener(v -> {
+            String text = tvBody.getText().toString();
+            if (text.isEmpty()) { Toast.makeText(this, "Nothing to copy", Toast.LENGTH_SHORT).show(); return true; }
+            ClipboardManager cb = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            cb.setPrimaryClip(ClipData.newPlainText("Note", text));
+            Toast.makeText(this, "Copied! Clears in 30s", Toast.LENGTH_SHORT).show();
+            if (clipboardClearRunnable != null) clipboardHandler.removeCallbacks(clipboardClearRunnable);
+            clipboardClearRunnable = () -> { ClipboardManager c2 = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE); if (c2 != null) c2.setPrimaryClip(ClipData.newPlainText("", "")); };
+            clipboardHandler.postDelayed(clipboardClearRunnable, CLIPBOARD_CLEAR_DELAY_MS);
+            return true;
+        });
+        viewTexts[6] = tvBody;
+        container.addView(tvBody);
+
+        // EDIT text
+        EditText etBody = new EditText(this);
+        etBody.setTextSize(15f);
+        etBody.setTextColor(getResources().getColor(R.color.input_text));
+        etBody.setHintTextColor(getResources().getColor(R.color.hint_color));
+        etBody.setHint("Start writing...");
+        etBody.setBackground(null);
+        etBody.setPadding(0, 0, 0, 0);
+        etBody.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        etBody.setMinLines(12);
+        etBody.setGravity(Gravity.TOP | Gravity.START);
+        etBody.setLineSpacing(0, 1.4f);
+        LinearLayout.LayoutParams bodyEP = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        etBody.setLayoutParams(bodyEP);
+        etBody.setVisibility(View.GONE);
+        editViews[6] = etBody;
+        container.addView(etBody);
+    }
+
+    /** Applies view/edit mode UI for Note type specifically. */
+    private void applyNoteModeUI(TextView tvScreenTitle) {
+        if (isEditMode) {
+            tvScreenTitle.setText(existingEntry != null ? "Edit Note" : "New Note");
+            btnEdit.setVisibility(View.GONE);
+            btnArchive.setVisibility(View.GONE);
+            if (existingEntry != null) {
+                btnShare.setVisibility(View.VISIBLE);
+                btnDelete.setVisibility(View.VISIBLE);
+            } else {
+                btnShare.setVisibility(View.GONE);
+                btnDelete.setVisibility(View.GONE);
+            }
+            if (editViews[0] != null) editViews[0].setVisibility(View.VISIBLE);
+            if (editViews[6] != null) editViews[6].setVisibility(View.VISIBLE);
+            if (viewTexts[0] != null) viewTexts[0].setVisibility(View.GONE);
+            if (viewTexts[6] != null) viewTexts[6].setVisibility(View.GONE);
+            if (tvCreatedAt != null) tvCreatedAt.setVisibility(View.GONE);
+            // Focus body if title already has content
+            if (existingEntry != null && editViews[6] != null) {
+                editViews[6].requestFocus();
+            } else if (editViews[0] != null) {
+                editViews[0].requestFocus();
+            }
+        } else {
+            tvScreenTitle.setText(existingEntry != null ? existingEntry.getDisplayTitle() : "Note");
+            btnEdit.setVisibility(View.VISIBLE);
+            btnShare.setVisibility(View.VISIBLE);
+            btnDelete.setVisibility(View.VISIBLE);
+            btnArchive.setVisibility(View.VISIBLE);
+            updateArchiveButton();
+            if (editViews[0] != null) editViews[0].setVisibility(View.GONE);
+            if (editViews[6] != null) editViews[6].setVisibility(View.GONE);
+            if (viewTexts[0] != null) viewTexts[0].setVisibility(View.VISIBLE);
+            if (viewTexts[6] != null) viewTexts[6].setVisibility(View.VISIBLE);
+            if (tvCreatedAt != null) {
+                if (existingEntry != null && existingEntry.getCreatedAt() > 0) {
+                    tvCreatedAt.setText("Added: " + formatDate(existingEntry.getCreatedAt()));
+                    tvCreatedAt.setVisibility(View.VISIBLE);
+                } else {
+                    tvCreatedAt.setVisibility(View.GONE);
+                }
+            }
+        }
     }
 
     // ── Field row builder ─────────────────────────────────────────────────────
@@ -1478,58 +1653,83 @@ public class DetailActivity extends BaseActivity {
 
     /**
      * Rebuilds the attachment list UI from current state.
-     * In VIEW mode: shows open button, no remove button.
-     * In EDIT mode: shows open + remove buttons, plus the Add button.
+     *
+     * VIEW mode, 1 file  → single row directly.
+     * VIEW mode, 2+ files, collapsed → one tappable summary row "📎 N files".
+     * VIEW mode, 2+ files, expanded  → collapse header + all file rows (no remove).
+     * EDIT mode → always fully expanded, remove button visible on each row.
      */
     private void renderAttachmentList() {
         if (attachmentListContainer == null) return;
         attachmentListContainer.removeAllViews();
 
-        // Show Add button in edit mode only
-        if (btnAddAttachment != null) {
-            btnAddAttachment.setVisibility(isEditMode ? View.VISIBLE : View.GONE);
-        }
-
-        // ── Saved attachments (minus removals) ────────────────────────────────
+        // Build list of visible saved attachments
+        java.util.List<Attachment> savedList = new java.util.ArrayList<>();
         if (existingEntry != null) {
             for (Attachment att : existingEntry.getAttachments()) {
-                if (pendingRemovals.contains(att.getId())) continue;
-                android.view.View row = getLayoutInflater()
-                        .inflate(R.layout.item_attachment_row, attachmentListContainer, false);
-                TextView tvName = row.findViewById(R.id.tvAttachFileName);
-                TextView tvSize = row.findViewById(R.id.tvAttachFileSize);
-                ImageButton btnOpen   = row.findViewById(R.id.btnAttachRowOpen);
-                ImageButton btnRemove = row.findViewById(R.id.btnAttachRowRemove);
-
-                tvName.setText(att.getName());
-                tvSize.setText(formatBytes(att.getSize()));
-                btnRemove.setVisibility(isEditMode ? View.VISIBLE : View.GONE);
-
-                btnOpen.setOnClickListener(v -> openSavedAttachment(att));
-                btnRemove.setOnClickListener(v -> {
-                    pendingRemovals.add(att.getId());
-                    renderAttachmentList();
-                });
-                attachmentListContainer.addView(row);
+                if (!pendingRemovals.contains(att.getId())) savedList.add(att);
             }
         }
+        int totalCount = savedList.size() + pendingAdds.size();
 
-        // ── Pending adds (not yet written to disk) ────────────────────────────
+        // Add button — edit mode only
+        if (btnAddAttachment != null) {
+            btnAddAttachment.setVisibility(isEditMode ? android.view.View.VISIBLE : android.view.View.GONE);
+        }
+
+        if (totalCount == 0) return;
+
+        // VIEW mode with 2+ files: collapsed summary unless user tapped to expand
+        if (!isEditMode && totalCount > 1 && !attachmentsExpanded) {
+            addAttachSummaryRow(totalCount);
+            return;
+        }
+
+        // VIEW mode + expanded: show a collapse header above the list
+        if (!isEditMode && totalCount > 1) {
+            addAttachCollapseRow(totalCount);
+        }
+
+        // ── Saved attachments ─────────────────────────────────────────────────
+        for (Attachment att : savedList) {
+            android.view.View row = getLayoutInflater()
+                    .inflate(R.layout.item_attachment_row, attachmentListContainer, false);
+            TextView    tvLabel   = row.findViewById(R.id.tvAttachLabel);
+            ImageButton btnRemove = row.findViewById(R.id.btnAttachRowRemove);
+            android.view.View card = row.findViewById(R.id.attachRowCard);
+
+            tvLabel.setText(att.getName() + "   " + formatBytes(att.getSize()));
+            card.setOnClickListener(v -> openSavedAttachmentWithProgress(att));
+
+            btnRemove.setVisibility(isEditMode ? android.view.View.VISIBLE : android.view.View.GONE);
+            btnRemove.setOnClickListener(v ->
+                    new MaterialAlertDialogBuilder(this)
+                            .setTitle("Remove Attachment")
+                            .setMessage("Remove \"" + att.getName() + "\"?\n\nIt will be permanently deleted when you save.")
+                            .setPositiveButton("Remove", (d, w) -> {
+                                pendingRemovals.add(att.getId());
+                                renderAttachmentList();
+                            })
+                            .setNegativeButton("Cancel", null)
+                            .show());
+            attachmentListContainer.addView(row);
+        }
+
+        // ── Pending adds (not yet saved to disk) ──────────────────────────────
         for (int i = 0; i < pendingAdds.size(); i++) {
             final int idx = i;
             PendingAttachment pa = pendingAdds.get(i);
             android.view.View row = getLayoutInflater()
                     .inflate(R.layout.item_attachment_row, attachmentListContainer, false);
-            TextView tvName = row.findViewById(R.id.tvAttachFileName);
-            TextView tvSize = row.findViewById(R.id.tvAttachFileSize);
-            ImageButton btnOpen   = row.findViewById(R.id.btnAttachRowOpen);
+            TextView    tvLabel   = row.findViewById(R.id.tvAttachLabel);
             ImageButton btnRemove = row.findViewById(R.id.btnAttachRowRemove);
+            android.view.View card = row.findViewById(R.id.attachRowCard);
 
-            tvName.setText(pa.name + " \u2022 unsaved");
-            tvSize.setText(formatBytes(pa.bytes.length));
-            btnOpen.setVisibility(View.GONE); // can't open until saved
-            btnRemove.setVisibility(isEditMode ? View.VISIBLE : View.GONE);
+            tvLabel.setText(pa.name + "   " + formatBytes(pa.bytes.length) + "  ·  pending");
+            card.setClickable(false);
+            card.setOnClickListener(null);
 
+            btnRemove.setVisibility(isEditMode ? android.view.View.VISIBLE : android.view.View.GONE);
             btnRemove.setOnClickListener(v -> {
                 pendingAdds.remove(idx);
                 renderAttachmentList();
@@ -1538,13 +1738,107 @@ public class DetailActivity extends BaseActivity {
         }
     }
 
-    /** Opens a saved attachment by reading from AttachmentStore and launching a viewer. */
-    private void openSavedAttachment(Attachment att) {
+    /** Builds a single collapsed summary row: "📎  N files" — tap expands. */
+    private void addAttachSummaryRow(int count) {
+        float d = getResources().getDisplayMetrics().density;
+        int pad  = Math.round(10 * d);
+        int sz   = Math.round(20 * d);
+        int gap  = Math.round(10 * d);
+        int mb   = Math.round(6 * d);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        row.setBackgroundResource(R.drawable.tile_bg);
+        row.setClickable(true);
+        row.setFocusable(true);
+        row.setPadding(pad, pad, pad, pad);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = mb;
+        row.setLayoutParams(lp);
+
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(R.drawable.ic_attachment);
+        icon.setColorFilter(0xFF757575);
+        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(sz, sz);
+        iconLp.setMarginEnd(gap);
+        icon.setLayoutParams(iconLp);
+        row.addView(icon);
+
+        TextView tv = new TextView(this);
+        tv.setText(count + " files");
+        tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14);
+        tv.setTextColor(getResources().getColor(R.color.text_primary, getTheme()));
+        tv.setLayoutParams(new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(tv);
+
+        ImageView chevron = new ImageView(this);
+        chevron.setImageResource(R.drawable.ic_chevron_right);
+        chevron.setColorFilter(0xFF757575);
+        chevron.setLayoutParams(new LinearLayout.LayoutParams(sz, sz));
+        row.addView(chevron);
+
+        row.setOnClickListener(v -> {
+            attachmentsExpanded = true;
+            renderAttachmentList();
+        });
+        attachmentListContainer.addView(row);
+    }
+
+    /** Builds a collapse header row: "N files  ▲" — tap collapses back to summary. */
+    private void addAttachCollapseRow(int count) {
+        float d = getResources().getDisplayMetrics().density;
+        int pad = Math.round(10 * d);
+        int sz  = Math.round(20 * d);
+        int gap = Math.round(10 * d);
+        int mb  = Math.round(6 * d);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        row.setClickable(true);
+        row.setFocusable(true);
+        row.setPadding(pad, pad, pad, pad);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = mb;
+        row.setLayoutParams(lp);
+
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(R.drawable.ic_attachment);
+        icon.setColorFilter(0xFF757575);
+        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(sz, sz);
+        iconLp.setMarginEnd(gap);
+        icon.setLayoutParams(iconLp);
+        row.addView(icon);
+
+        TextView tv = new TextView(this);
+        tv.setText(count + " files  ▲");
+        tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14);
+        tv.setTextColor(getResources().getColor(R.color.text_primary, getTheme()));
+        tv.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        row.addView(tv);
+
+        row.setOnClickListener(v -> {
+            attachmentsExpanded = false;
+            renderAttachmentList();
+        });
+        attachmentListContainer.addView(row);
+    }
+
+    /** Opens a saved attachment with a progress toast while decrypting. */
+    private void openSavedAttachmentWithProgress(Attachment att) {
+        Toast loading = Toast.makeText(this, "Opening…", Toast.LENGTH_SHORT);
+        loading.show();
         new Thread(() -> {
             byte[] bytes;
             try {
                 bytes = attachmentStore.read(att.getId());
             } catch (Exception e) {
+                loading.cancel();
                 runOnUiThread(() -> new MaterialAlertDialogBuilder(this)
                         .setTitle("File Not Found")
                         .setMessage("The attachment file could not be read. It may have been deleted.")
@@ -1552,6 +1846,7 @@ public class DetailActivity extends BaseActivity {
                         .show());
                 return;
             }
+            loading.cancel();
             runOnUiThread(() -> openBytesAsFile(bytes, att.getName(), att.getMimeType()));
         }).start();
     }

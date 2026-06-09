@@ -48,6 +48,9 @@
         <item name="android:windowBackground">@color/light_gray</item>
         <item name="materialAlertDialogTheme">@style/CryptexAlertDialog</item>
         <item name="switchStyle">@style/CryptexSwitch</item>
+        <!-- Opt out of API 35 forced edge-to-edge so layouts are not drawn
+             behind the status bar or navigation bar. -->
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
     </style>
 
     <!-- Switch: blue when ON, grey when OFF, white thumb always -->

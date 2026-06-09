@@ -18,6 +18,22 @@
         android:paddingRight="24dp"
         android:paddingBottom="32dp">
 
+        <!-- Header: icon top-left only -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingTop="12dp"
+            android:paddingBottom="12dp">
+
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@mipmap/ic_launcher"
+                android:contentDescription="@string/app_name"/>
+
+        </LinearLayout>
+
         <!-- Top zone: dots + attempts, centred in the upper half of the screen -->
         <LinearLayout
             android:layout_width="match_parent"
@@ -26,14 +42,18 @@
             android:orientation="vertical"
             android:gravity="center">
 
-            <!-- App icon -->
-            <ImageView
-                android:layout_width="88dp"
-                android:layout_height="88dp"
+            <!-- Rotating tagline — centred, just above the PIN title -->
+            <TextView
+                android:id="@+id/tvTagline"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:layout_gravity="center_horizontal"
                 android:layout_marginBottom="20dp"
-                android:src="@mipmap/ic_launcher"
-                android:contentDescription="@string/app_name"/>
+                android:textColor="#99FFFFFF"
+                android:textSize="13sp"
+                android:gravity="center"
+                android:lineSpacingMultiplier="1.3"
+                android:text="Your secrets, your device, your control."/>
 
             <!-- Title — changes based on mode: Set PIN / Confirm PIN / Enter PIN -->
             <TextView
