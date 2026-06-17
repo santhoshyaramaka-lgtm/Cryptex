@@ -46,7 +46,7 @@ public class ForgotPinActivity extends BaseActivity {
                 android.view.WindowManager.LayoutParams.FLAG_SECURE);
         setContentView(R.layout.activity_forgot_pin);
 
-        storage = new StorageHelper(this);
+        storage = StorageHelper.getInstance(this);
 
         // ── Toolbar back button ───────────────────────────────────────────────
         findViewById(R.id.btnBack).setOnClickListener(v -> finish());

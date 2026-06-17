@@ -40,8 +40,10 @@
             android:layout_marginStart="6dp"
             android:text="Add Entry"
             android:textColor="@color/white"
-            android:textSize="19sp"
-            android:textStyle="bold"/>
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end"/>
 
         <!-- Edit button — visible in VIEW mode only -->
         <ImageButton
@@ -79,6 +81,16 @@
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="Delete"
             android:src="@drawable/ic_delete"
+            android:visibility="gone"/>
+
+        <!-- Overflow menu — visible in EDIT mode only (Manage Fields, Share, Delete) -->
+        <ImageButton
+            android:id="@+id/btnOverflow"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="More options"
+            android:src="@drawable/ic_more_vert"
             android:visibility="gone"/>
 
     </LinearLayout>
@@ -290,8 +302,19 @@
                 android:drawablePadding="4dp"
                 android:paddingStart="4dp"
                 android:paddingEnd="8dp"
-                android:layout_marginTop="4dp"
+                android:layout_marginTop="0dp"
                 android:background="?attr/selectableItemBackground"
+                android:visibility="gone"/>
+
+            <!-- Date label: Added / Modified — right-aligned, VIEW mode only, below attachments -->
+            <TextView
+                android:id="@+id/tvDateLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:gravity="end"
+                android:layout_marginTop="12dp"
                 android:visibility="gone"/>
 
         </LinearLayout>

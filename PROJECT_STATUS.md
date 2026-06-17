@@ -1,8 +1,9 @@
 # Cryptex — Project Status & Handover Document
-**Last Updated:** June 9, 2026
+**Last Updated:** June 16, 2026
 **App Name:** Cryptex
-**Current Stable Version:** v25.0 (versionCode 25) — open
-**APK Location:** `Cryptex_Key/Cryptex-v25.0-release.apk` (stable)
+**Current Stable Version:** v29.0 (versionCode 29) — ✅ STABLE
+**APK Location:** `Cryptex_Key/Cryptex-v29.0-release.apk` | `G:\My Drive\Cryptex\Cryptex-v29.0-release.apk`
+**Branch:** `Cryptes-29`
 
 ---
 
@@ -26,20 +27,22 @@ Cryptex/
 │       ├── AndroidManifest.xml
 │       ├── java/com/cryptex/app/
 │       │   ├── BaseActivity.java
-│       │   ├── OnboardingActivity.java     ← v25: first-install onboarding (LAUNCHER)
+│       │   ├── OnboardingActivity.java         ← v25: first-install onboarding (LAUNCHER)
 │       │   ├── Entry.java
-│       │   ├── EntryType.java
+│       │   ├── EntryType.java                  ← v29: OTHERS type, isPerRecordFields()
 │       │   ├── EntryAdapter.java
-│       │   ├── StorageHelper.java
+│       │   ├── StorageHelper.java              ← v29: hidden tile types, attachment groups
 │       │   ├── BackupCrypto.java
-│       │   ├── ChecklistItem.java          ← v19: checklist item model
+│       │   ├── ChecklistItem.java              ← v19: checklist item model
+│       │   ├── CustomCategory.java             ← v26: user-defined categories
+│       │   ├── CustomField.java                ← v26: per-category field definition
+│       │   ├── FieldManagerDialog.java         ← v29: reusable field manager UI
+│       │   ├── ManageCategoriesActivity.java   ← v29: show/hide home screen tiles
 │       │   ├── PinActivity.java
 │       │   ├── ForgotPinActivity.java
 │       │   ├── MainActivity.java
 │       │   ├── TypeListActivity.java
 │       │   ├── DetailActivity.java
-│       │   ├── FilterBottomSheet.java
-│       │   ├── TypePickerBottomSheet.java
 │       │   └── SettingsActivity.java
 │       └── res/
 │           ├── layout/               ← all XML layouts
@@ -51,7 +54,7 @@ Cryptex/
 ├── gradle/
 ├── Cryptex_Key/
 │   ├── cryptex_release.jks           ← release keystore
-│   └── Cryptex-v17.0-release.apk    ← last stable APK
+│   └── Cryptex-v27.0-release.apk    ← last stable APK
 ├── .vscode/
 │   └── settings.json
 ├── local.properties                  ← SDK path (tracked)
@@ -67,8 +70,8 @@ Cryptex/
 | `compileSdk` | 35 |
 | `minSdk` | 23 |
 | `targetSdk` | 35 |
-| `versionCode` | 25 |
-| `versionName` | "25.0" |
+| `versionCode` | 29 |
+| `versionName` | "29.0" |
 | `minifyEnabled` | **false** (must stay false — see note) |
 | Keystore | `Cryptex_Key/cryptex_release.jks` |
 | Key alias | `cryptex_key` |
@@ -129,11 +132,15 @@ Each entry has:
 | `bank` | Bank Details | 🏦 | Bank Name | Acct Holder | Acct No* | IFSC | Branch | Customer ID* | Notes |
 | `personal` | Personal Info | 👤 | Title | Full Name | ID Number* | Date of Birth | — | — | Notes |
 | `pin` | PIN / Code | 🔐 | Title | PIN/Code* | — | — | — | — | Notes |
+| `others` | Others | 📦 | Title | — | — | — | — | — | Notes (per-record fields) |
 | `note` | Note | 📝 | Title | — | — | — | — | — | Notes |
-| `checklist` | Checklist | ☑️ | Title (field1) | — | — | — | — | — | — |
+| `checklist` | Checklist | ☑️ | Title | — | — | — | — | — | — |
+| `custom_*` | User-defined | custom | per-category field labels | per-record fields |
 
 `*` = secret field (masked by default, eye-toggle to reveal)
-Checklist items are stored in the separate `checklistItems` list, not in field slots.
+- `others` and all `custom_*` types use **per-record fields** (`Entry.recordFields`, `Entry.recordIncludeNotes`)
+- `isPerRecordFields(type)` → true for `others` + `custom_*`
+- `isCustom(type)` → true for `custom_*` only (used to gate long-press Edit/Delete on home tiles)
 
 ### Storage
 - All entries stored as JSON in `EncryptedSharedPreferences` under key `entries`.
@@ -208,7 +215,31 @@ Checklist items are stored in the separate `checklistItems` list, not in field s
 
 ---
 
-## 7. Activity & Flow Map
+## 7. v29.0 Features & Fixes ✅ STABLE — June 16, 2026
+
+### New Features
+- [x] **"Others" built-in category (📦)** — catch-all type with per-record custom fields; tile order: PIN → Others → Note → Checklist
+- [x] **Per-record custom fields** — `Entry.recordFields` (List<CustomField>) + `Entry.recordIncludeNotes`; `isPerRecordFields()` covers `others` + all `custom_*`
+- [x] **Custom categories** (v26 feature completed) — user creates categories with name + emoji; fields are defined per-record at entry creation time
+- [x] **⋮ Overflow menu in edit mode** — replaces individual Share/Delete/Manage buttons in top bar; `btnOverflow` ImageButton with `ic_more_vert` drawable
+- [x] **Save → VIEW mode** — save no longer calls `finish()`; stays in screen showing saved data via `switchToViewMode()`
+- [x] **Manage Categories** (Settings) — show/hide any category tile on home screen; hidden categories excluded from search too; data never deleted; toggle saved instantly to encrypted prefs (`hidden_tile_types`)
+
+### Attachment Group Fixes
+- [x] **Group survives individual file deletion** — deleting last file in a group individually keeps the group header alive (`preserveGroupIfNowEmpty()`); only explicit "Delete Group" removes the header
+- [x] **"Delete Group" clears `pendingEmptyGroups`** — prevents ghost header after explicit delete
+- [x] **Empty group deletion triggers save prompt** — `deletedGroups` set tracks saved groups deleted this session; `hasUnsavedChanges()` fires correctly on Back
+
+### Other Fixes
+- [x] **`applyNoteModeUI` edit mode** — now shows `btnOverflow` (consistent with all types); hides individual share/delete
+- [x] **`applyNoteModeUI` view mode** — now hides `btnOverflow`
+- [x] **`switchToViewMode()` hides `saveActionBar`** — action bar correctly hidden on save
+- [x] **Dead method `buildLabelsSnapshot()` removed**
+- [x] **`TypeListActivity` OTHERS fallback** — explicit `isCustom()` guard; OTHERS case commented
+
+---
+
+## 8. Activity & Flow Map
 
 ```
 OnboardingActivity  (LAUNCHER)
@@ -254,8 +285,14 @@ SettingsActivity
     ├─ Auto-Backup    (toggle — shown only after first export)
     ├─ Auto-lock      (picker: Off/10s/30s/1min/5min)
     ├─ Biometric Unlock (toggle — PIN-verified enable, hardware check)
+    ├─ Manage Categories → ManageCategoriesActivity (show/hide tiles)
     ├─ Change PIN
     └─ Security Question (pick question → enter answer → save)
+
+ManageCategoriesActivity
+    └─ RecyclerView of all types (built-in + custom) with Switch toggle per row
+       Toggle OFF → hidden from home grid/list + excluded from search
+       Toggle ON  → tile reappears, all entries intact (zero data loss)
 ```
 
 ---
@@ -731,6 +768,111 @@ After a correct PIN was entered, `goToMain()` in `PinActivity` launched `MainAct
 
 ---
 
+## 12j. V26.0 — Completed Features ✅ STABLE — Closed Jun 9, 2026
+
+### Custom Categories
+- [x] **Create / Edit / Delete** — long-press any custom tile on home screen → Edit / Delete options
+- [x] **Two-step creation dialog** — Step 1: name + emoji; Step 2: field definitions (up to 6 labelled fields, each optionally masked)
+- [x] **Notes field auto-included** — always shown as last field, non-removable
+- [x] **`CustomCategory` + `CustomField` models** — `id` (UUID), `name`, `emoji`, `fields[]`
+- [x] **`EntryType.init()`** — loads custom categories into the static type resolver on every `onResume()`
+- [x] **`EntryType.isCustom()` + `EntryType.findCustom()`** — APIs for checking/fetching custom types
+- [x] **Persisted in `custom_categories` encrypted prefs** — JSON array, same `EncryptedSharedPreferences` store
+- [x] **Backup v2 includes custom categories** — `custom_categories.enc` entry in ZIP; `mergeCustomCategories()` on import (skip duplicate IDs)
+- [x] **PDF export includes custom categories** — excluded from CHECKLIST-only filter; categories with entries appear in picker
+- [x] **`importCustomCategoriesFromJson` race fix** — rewrote to parse in memory only; never temp-writes to prefs
+
+### Slot-Aware File Picker
+- [x] **Remaining count shown in button title** — "1 slot remaining" or "up to N files"
+- [x] **Single slot → `OpenDocument`** — prevents multi-file picker showing when only 1 slot left
+- [x] **Multiple slots → `OpenMultipleDocuments`** — existing behaviour
+
+### Export Choice Dialog
+- [x] **Shown when selected entries have attachments** — `showExportChoiceDialog()` in `SettingsActivity`
+- [x] **Three options** — 📄 Text only (PDF) / 📎 Files only (ZIP) / 🗂️ Both (PDF + attachments ZIP)
+- [x] **`shareAttachmentsOnly()`** — new method, ZIP attachments only (no PDF, no password)
+- [x] **`generatePdf()` + `showPdfPasswordDialog()` take `textOnly` param** — routes to correct post-PDF action
+- [x] **ZIP folder/filename collision dedup** — `usedPaths` Set prevents silent overwrites; duplicate folders get `_2`, `_3` suffix; duplicate filenames get `_2` before extension
+
+### Bug Fixes
+- [x] **Rename not saving on back** — `renamedOriginals` map tracks original names; `hasUnsavedChanges()` checks `!renamedOriginals.isEmpty()`
+- [x] **Discard not reverting renamed attachment names** — discard path iterates `renamedOriginals`, restores originals, then clears map
+- [x] **Wrong delete operation order (4 locations)** — `saveEntriesJson()` now always called before `deleteAll()` in: entry delete, archive, bulk delete (TypeListActivity), category delete (MainActivity)
+- [x] **Dead code removed** — `exportSelectedAsPdf()` (~45 lines) removed from `TypeListActivity`
+- [x] **PDF picker showed Checklist** — added explicit `continue` skip in `showPdfCategoryPicker()`
+- [x] **Multi-file read on main thread** — moved all URI I/O to background thread with progress dialog; cumulative size tracking fixed
+- [x] **Dialog list item text grayed out** — `colorOnSurface`, `android:textColorPrimary`, `android:textColorAlertDialogListItem` all set to `@color/text_primary` in `CryptexAlertDialog` theme; fixes `setItems`/`setSingleChoiceItems`/`setMultiChoiceItems` in all 3 affected dialogs
+
+---
+
+## 12q. V27.0 — Completed Features ✅ STABLE — open Jun 10, 2026
+
+### Attachment Groups
+- [x] **`Attachment.group` field** — optional string label (e.g. "Payslips"); empty string = ungrouped; fully backward-compatible (old entries deserialize with `group = ""`)
+- [x] **`StorageHelper` serialization** — `group` written to JSON (omitted if empty); read with `optString("group", "")` — old backups with no group field restore cleanly
+- [x] **Grouped attachment UI in `DetailActivity`**:
+  - **VIEW mode** — named groups render as collapsible folder rows `📁 Payslips (3) ›`; tap to expand/collapse; ungrouped files shown as flat list below groups
+  - **EDIT mode** — groups fully expanded; each group header shows `✏️` rename button + chevron toggle; per-group `+ Add to [group]` button; ungrouped files flat; `+ New Group` button at bottom
+  - **Add button flow** — tapping Add now first asks which group (existing groups / New group… / No group), then asks Camera or From files
+  - **Group rename** — renames all files in the group in-memory; tracked in `renamedGroups` map for discard revert; `originalGroups` map tracks per-file original group for individual revert
+  - **Discard** — reverts both file renames (`renamedOriginals`) and group moves (`originalGroups`); clears `renamedGroups`
+  - **`hasUnsavedChanges()`** — detects pending group renames and moves alongside file renames and add/remove
+- [x] **`expandedGroups` set** — remembers which groups are expanded in view mode for the current screen session
+- [x] **`pendingPickGroup`** — tracks target group for the active file-pick session; passed to `PendingAttachment` on read
+- [x] **`PendingAttachment.group`** — new field; group assigned at pick time; stamped onto saved `Attachment` via `setGroup()` after `AttachmentStore.save()`
+- [x] **Backup / restore** — groups round-trip through `entryToJson()` / `entryFromJson()` automatically; backup format unchanged (group is just another JSON field inside the attachment object)
+
+### Selective Share
+- [x] **Per-file checkboxes in share dialog** — when a record has 2+ attachments, the single "Include attachments" checkbox is replaced by an individual checkbox per file (all ticked by default); user unticks any files they don't want to send
+- [x] **1-file case unchanged** — single "Include attachment: filename" checkbox; same UX as before
+- [x] **All-unticked fallback** — if user unticks every file, share proceeds as text-only
+- [x] **`shareEntry(List<Object>)` signature** — replaced old `shareEntry(boolean)` with a typed selected-files list; only the chosen subset is decrypted and attached to the share intent
+
+### Attachment Limits
+- [x] **File count raised 30 → 50** — `MAX_ATTACHMENT_COUNT = 50` in `DetailActivity`
+- [x] **Total size stays at 200 MB** — `MAX_TOTAL_BYTES` unchanged; 200 MB is the real enforced cap; the count limit is a generous ceiling
+- [x] **Skip toasts distinguish reason** — "Maximum 50 attachments" vs "Total size limit (200 MB) reached" vs "N file(s) too large" shown separately
+
+---
+
+## 12r. V28.0 — Completed Features ✅ STABLE — Closed June 12, 2026
+
+### Custom Category Dialog — Full Overhaul
+- [x] **Step 1** — single combined input `etName` with hint `"e.g. 🗃️ My Category"` (emoji + name in one field); emoji parsed from first codepoint (Unicode ranges checked); default fallback emoji 🗃️; `ViewFlipper` with `setMeasureAllChildren(false)` so Step 1 has no blank space from Step 2
+- [x] **Step 2** — `ScrollView` → `LinearLayout (step2)` holding field rows + `+ Add Field` button; up to 5 user fields (slot 1 = Title implicit, slots 2–6 = user fields, slot 7 = Notes)
+- [x] **Title field implicit** — "Title" always at index 0; not shown in Step 2; `CustomCategory.getFieldLabels()` returns `"Title"` at index 0, user fields at 1–5, `"Notes"` at 6 if `includeNotes`
+- [x] **Notes checkbox in title bar** — `setCustomTitle()` with `LinearLayout` holding dialog title text + `CheckBox "Notes"`; checkbox hidden in Step 1, shown in Step 2
+- [x] **Field row layout** — `[▲][▼]  [EditText field name.........]  [⋮]`; ▲▼ stay visible for quick reorder; ⋮ opens `PopupMenu` with **Mask** (checkable, toggles in-place — no rebuild) and **Remove** (triggers full rebuild)
+- [x] **▲▼ reorder** — swaps adjacent `workingFields` entries, calls `renderFields[0].run()` (full rebuild; keyboard dismiss acceptable)
+- [x] **Keyboard stays open on `+ Add Field`** — `appendFieldRow` lambda appends only the new row without `removeAllViews()`; `renderFields[0].run()` (full rebuild) reserved for ▲▼ and Remove only
+- [x] **`buildAddFieldButton()` helper** — extracted method; removes self, appends new row, re-adds button, focuses new EditText directly (no `post()` delay needed); EditText is at `getChildAt(2)` (▲=0, ▼=1, EditText=2)
+- [x] **Soft input mode** — `SOFT_INPUT_STATE_ALWAYS_VISIBLE | SOFT_INPUT_ADJUST_RESIZE` set on dialog window before `show()` so keyboard is open on Step 2 arrival
+- [x] **Duplicate name check** — case-insensitive; skips self when editing; uses `final String nameForCheck` for lambda capture safety
+
+### Attachment Search
+- [x] **Global search** — attachment filename matched in `showSearchResults()`; shown as subtitle `"📎 filename"` only if no field already matched
+- [x] **Per-type search** — same logic in `TypeListActivity`
+- [x] **`EntryAdapter` subtitle** — `attachmentFilenameMatch` field; amber highlight applied to matched filename
+
+### Home Screen Improvements
+- [x] **Grid / List toggle** — `btnViewToggle` (ImageButton, `ic_grid` / `ic_list`) in top bar; persisted in `pref_list_mode` SharedPreferences; grid = 2 columns (`setColumnCount(2)`), list = 1 column (`setColumnCount(1)`) with full-width `item_type_list.xml` rows (emoji + name + count + chevron)
+- [x] **"Your Categories" divider** — `makeSectionDivider()` inserts `"──── YOUR CATEGORIES ────"` row between built-in tiles and custom category tiles in `buildTileGrid()`
+- [x] **New drawables** — `ic_grid.xml`, `ic_list.xml`, `ic_arrow_up.xml`, `ic_arrow_down.xml`, `item_type_list.xml`
+
+### DetailActivity Improvements
+- [x] **Edit mode header** — shows `"Edit · " + existingEntry.getDisplayTitle()` (not category name)
+- [x] **Duplicate title check** — loops entries of same type, case-insensitive, skips self; blocks save with inline error
+- [x] **Title ellipsis** — `tvScreenTitle` set to 16sp, `maxLines=1`, `ellipsize=end` in `activity_detail.xml`
+- [x] **Back button fix** — top-left `←` button now calls `onBackPressed()` directly (was calling `getOnBackPressedDispatcher().onBackPressed()` which bypassed the save-bar override)
+
+### Dead Code Removed
+- [x] `FilterBottomSheet.java`, `TypePickerBottomSheet.java`, `fragment_filter.xml`, `fragment_type_picker.xml`, `ui/GalaxyLogo.kt` deleted
+
+### Version Bump
+- [x] `versionCode 28`, `versionName "28.0"`, `app_version` string updated to `"Version 28.0"`
+
+---
+
 ## 13. Version History
 
 | Version | Date | Key Features Added |
@@ -758,4 +900,7 @@ After a correct PIN was entered, `goToMain()` in `PinActivity` launched `MainAct
 | v22.0 | Jun 1, 2026 | **Background-thread save refactor** — serialize JSON on main thread, write on background thread; `finish()` runs only after disk write completes (eliminates stale-read race). **Checklist flicker fix** — `toggleChecklistItemInPlace()` replaces full `renderChecklist()` rebuild on checkbox toggle. **RecyclerView animator disabled** — `MainActivity` and `TypeListActivity` set `setItemAnimator(null)` to prevent card flash on list refresh. `versionCode 22`, `versionName "22.0"`. |
 | v23.0 | Jun 4, 2026 | **Label standardisation** — "Website / App" renamed to "Website" in `EntryType.getDisplayName()`, filter sheet, and type picker sheet. `versionCode 23`, `versionName "23.0"`. |
 | v24.0 | Jun 5, 2026 | **Multi-attachment support** — `Attachment` model + `AttachmentStore` (Android Keystore `EncryptedFile`, per-attachment `.enc` files); `DetailActivity` reworked for multiple attachments (async add/open/share/remove, size limits, pending state, cleanup on delete/archive). **Backup v2 ZIP `.cxb`** — ZIP-format backup with `entries.json` + per-attachment blobs, single PBKDF2 key, backward-compatible import. **App icon redesign** — Chrome C lettermark (Georgia Bold glyph, chrome gradient) over vault door on `#D8DCDF` grey background; 4 gold cardinal bolts, teal accent rings, keyhole in C gap. **PIN screen icon** — 88 dp app icon displayed above "Enter PIN" title on `PinActivity`. `versionCode 24`, `versionName "24.0"`. |
+| v28.0 | Jun 12, 2026 | **Custom category dialog overhaul** — single emoji+name input (Step 1); field rows `[▲][▼][EditText][⋮]` with ⋮ popup (Mask checkable, Remove); keyboard stays open on `+ Add Field` (append-only, no full rebuild); `buildAddFieldButton()` helper; `SOFT_INPUT_STATE_ALWAYS_VISIBLE` on dialog; Notes checkbox in title bar; `setMeasureAllChildren(false)` on ViewFlipper. **Attachment search** — attachment filename matched in global and per-type search; shown as `"📎 filename"` subtitle with amber highlight. **Grid/List toggle** — `btnViewToggle` persisted; list mode = full-width rows with chevron. **"Your Categories" divider** on home screen. **Edit mode header** shows record name. **Duplicate title check** in DetailActivity. **Title ellipsis** 16sp/maxLines=1. **Back button fix** — `←` calls `onBackPressed()` directly. **Dead code removed** — FilterBottomSheet, TypePickerBottomSheet, GalaxyLogo. `versionCode 28`, `versionName "28.0"`. |
+| v27.0 | Jun 10, 2026 | **Attachment groups** — files inside an entry can be organised into named folders (groups); group shown as collapsible folder row in view mode; edit mode adds rename, per-group add, and new-group controls; group field stored in JSON, round-trips through backup. **Selective share** — 2+ attachments show per-file checkboxes in share dialog (all ticked by default); user picks only the files they want to send; all-unticked falls back to text-only. **Attachment count raised 30 → 50** — `MAX_ATTACHMENT_COUNT = 50`; 200 MB total-size cap unchanged and remains the real enforced limit. `versionCode 27`, `versionName "27.0"`. |
+| v26.0 | Jun 9, 2026 | **Custom categories** — users can create/edit/delete their own entry types with custom name, emoji, and up to 6 labelled fields (each optionally masked); long-press a custom tile on home screen → Edit / Delete; Notes field always auto-included; category persisted in `custom_categories` encrypted prefs; `EntryType.init()` + `EntryType.isCustom()` + `EntryType.findCustom()` APIs added; `CustomCategory` + `CustomField` models; two-step creation dialog (name/emoji → fields); all entry lists, PDF export, and backup include custom categories; `mergeCustomCategories()` on import (skip-duplicate-ID). **Slot-aware file picker** — add attachment button shows remaining slot count in title; single slot remaining → `OpenDocument` (single-file picker); multiple slots → `OpenMultipleDocuments`; prevents over-pick. **Export choice dialog** — when selected entries have attachments, user chooses: 📄 Text only (PDF) / 📎 Files only (ZIP) / 🗂️ Both (PDF + ZIP); `shareAttachmentsOnly()` added; `generatePdf()` and `showPdfPasswordDialog()` take `textOnly` param. **Rename persistence fix** — back press during edit now detects renamed attachments as unsaved changes via `renamedOriginals` map; `hasUnsavedChanges()` checks `!renamedOriginals.isEmpty()`. **Discard reverts renames** — discard path iterates `renamedOriginals` and restores original attachment names before clearing. **Delete operation order fixed (4 locations)** — `saveEntriesJson()` always called before `deleteAll()` in entry delete, archive, bulk delete, and category delete; orphaned `.enc` files are harmless, broken references are not. **`importCustomCategoriesFromJson` race fix** — previously used dangerous temp-write-to-prefs pattern with async `apply()`; rewritten to parse JSON in memory only, never touching prefs. **Dead code removed** — `exportSelectedAsPdf()` (~45 lines) removed from `TypeListActivity`. **Dialog list item text fix** — `colorOnSurface`, `android:textColorPrimary`, and `android:textColorAlertDialogListItem` all set to `@color/text_primary` in `CryptexAlertDialog` theme; fixes grayed-out text in `setItems`/`setSingleChoiceItems`/`setMultiChoiceItems` dialogs. `versionCode 26`, `versionName "26.0"`. |
 | v25.0 | Jun 8, 2026 | **API 35 target** — `compileSdk`/`targetSdk` bumped to 35; edge-to-edge opt-out in `Theme.MS`; `registerReceiver` export flag fixed; AGP warning suppressed. **Onboarding flow** — 4-step first-install experience: User Agreement (scroll-to-unlock), How It Works, mandatory Security Question setup (supports "Write my own…" custom question), Security Reminder; existing users silently bypassed; `OnboardingActivity` is new LAUNCHER; `PinActivity` set `exported=false`. **Custom security question** — index 2 = "Write my own…"; custom text stored in `security_q_custom` encrypted prefs; supported in onboarding, Settings, and ForgotPin. **Backup tip dialog** — one-time dialog on first `MainActivity` open; skipped if backup already configured. **Rotating PIN taglines** — 8 privacy-themed taglines picked randomly each time the lock screen opens; small top-left icon; tagline centred above PIN title; no divider. **Bulk PDF export from TypeListActivity** — long-press entries → select → 📄 button → password → PDF of selected entries only; `SettingsActivity` PDF-only mode (`isPdfOnlyMode` flag); existing Settings PDF export unchanged. **Note type clean UI** — no boxes, no labels; bold 22sp title + full-width body with 1.4× line spacing; no `maxLines`; all other types unchanged. **Home search back press fix** — 3-step: keyboard close → clear search → exit app; `searchKeyboardDismissed` flag prevents "does nothing" middle step. **Attachment UI simplification** — no header/count/separator/colours/share button; 1 file shown directly; 2+ files collapsed to `N files ›` summary with tap-to-expand; edit mode always expanded with confirm-on-remove. `versionCode 25`, `versionName "25.0"`. |

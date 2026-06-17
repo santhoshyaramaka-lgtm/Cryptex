@@ -11,8 +11,10 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import androidx.core.view.WindowCompat;
 
+import java.io.File;
 import java.io.OutputStream;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * BaseActivity — shared screen-lock + auto-backup behaviour for all activities.
@@ -44,6 +46,9 @@ public abstract class BaseActivity extends AppCompatActivity {
 
     private StorageHelper baseStorage;
 
+    /** Guard so camera-temp cleanup runs only once per process lifetime. */
+    private static final AtomicBoolean sCameraCleanupDone = new AtomicBoolean(false);
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -51,6 +56,28 @@ public abstract class BaseActivity extends AppCompatActivity {
         // Setting decorFitsSystemWindows=true restores the traditional behaviour
         // where the system bars reserve space so layouts are never obscured.
         WindowCompat.setDecorFitsSystemWindows(getWindow(), true);
+        cleanStaleCameraTemps();
+    }
+
+    /**
+     * Deletes any leftover capture_*.jpg temp files from the camera dir.
+     * These are created in startCameraCapture() and deleted in handleCameraCapture(),
+     * but if the app was killed mid-capture the file is never cleaned up.
+     * Runs once per process lifetime on a background thread.
+     */
+    private void cleanStaleCameraTemps() {
+        if (!sCameraCleanupDone.compareAndSet(false, true)) return;
+        final File cameraDir = new File(getCacheDir(), "camera");
+        new Thread(() -> {
+            try {
+                File[] stale = cameraDir.listFiles(
+                        f -> f.isFile() && f.getName().startsWith("capture_") && f.getName().endsWith(".jpg"));
+                if (stale != null) {
+                    for (File f : stale) //noinspection ResultOfMethodCallIgnored
+                        f.delete();
+                }
+            } catch (Exception ignored) { }
+        }, "camera-cleanup").start();
     }
 
     // ── Shared auto-lock check ────────────────────────────────────────────────
@@ -223,7 +250,8 @@ public abstract class BaseActivity extends AppCompatActivity {
                     }
                 }
 
-                byte[] encrypted = BackupCrypto.encryptZip(json, attachmentItems, password);
+                byte[] encrypted = BackupCrypto.encryptZip(json, attachmentItems, password,
+                        baseStorage.exportCustomCategoriesJson());
 
                 Uri uri = Uri.parse(uriString);
                 try (OutputStream os = getContentResolver().openOutputStream(uri, "w")) {

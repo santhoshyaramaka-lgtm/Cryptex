@@ -118,7 +118,7 @@ public class SettingsActivity extends BaseActivity {
                 if (pdfEntryIds.contains(e.getId())) selected.add(e);
             }
             if (!selected.isEmpty()) {
-                new android.os.Handler().postDelayed(() -> showPdfPasswordDialog(selected), 200);
+                new android.os.Handler().postDelayed(() -> showPdfPasswordDialog(selected, true), 200);
             } else {
                 finish();
             }
@@ -134,6 +134,8 @@ public class SettingsActivity extends BaseActivity {
                 importFilePicker.launch(new String[]{"application/octet-stream", "*/*"}));
         findViewById(R.id.cardAutoLock).setOnClickListener(v -> showAutoLockDialog());
         findViewById(R.id.cardSecurityQ).setOnClickListener(v -> showSecurityQDialog());
+        findViewById(R.id.cardManageCategories).setOnClickListener(v ->
+                startActivity(new android.content.Intent(this, ManageCategoriesActivity.class)));
 
         // Auto-backup toggle
         Switch switchAutoBackup = findViewById(R.id.switchAutoBackup);
@@ -184,6 +186,7 @@ public class SettingsActivity extends BaseActivity {
         super.onResume();
         if (isPdfOnlyMode) return; // PDF-only mode — no auto-lock check, no card refresh
         if (checkAndHandleAutoLock()) return;
+        EntryType.init(storage.loadCustomCategories());
         updateBackupCard();
     }
 
@@ -274,7 +277,7 @@ public class SettingsActivity extends BaseActivity {
         // Xiaomi, etc.). By asking the user to pick the existing backup file here,
         // we store an ACTION_OPEN_DOCUMENT URI which auto-backup can reliably write to.
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        intent.setType("application/octet-stream");
+        intent.setType("*/*");
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         updateFilePicker.launch(intent);
     }
@@ -308,7 +311,8 @@ public class SettingsActivity extends BaseActivity {
                     }
                 }
 
-                byte[] encrypted = BackupCrypto.encryptZip(json, attachmentItems, password);
+                byte[] encrypted = BackupCrypto.encryptZip(json, attachmentItems, password,
+                        storage.exportCustomCategoriesJson());
 
                 try (java.io.OutputStream os = getContentResolver().openOutputStream(uri)) {
                     if (os == null) throw new Exception("Cannot open output stream.");
@@ -401,6 +405,13 @@ public class SettingsActivity extends BaseActivity {
                         } catch (Exception ignored) {
                             // Skip unrestorable attachment — entry still imports
                         }
+                    }
+                    // v26: Restore custom categories (merge, skip duplicates)
+                    if (zipContent.customCategoriesJson != null
+                            && !zipContent.customCategoriesJson.equals("[]")) {
+                        List<CustomCategory> importedCats =
+                                storage.importCustomCategoriesFromJson(zipContent.customCategoriesJson);
+                        if (importedCats != null) storage.mergeCustomCategories(importedCats);
                     }
                 } else {
                     // ── Legacy blob format (pre-v24) ────────────────────────────
@@ -766,15 +777,13 @@ public class SettingsActivity extends BaseActivity {
     }
 
     private void showPdfCategoryPicker(List<Entry> activeEntries) {
-        // Only show types that have at least one active entry
-        final String[] allTypes = {
-                EntryType.WEBSITE, EntryType.CARD, EntryType.BANK,
-                EntryType.PERSONAL, EntryType.PIN, EntryType.NOTE
-        };
+        // Only show types that have at least one active entry (built-in + custom, excludes checklist)
+        final String[] allTypes = EntryType.getAllTypes();
 
-        // Build list of types that actually have entries (excludes checklist — not in PDF)
+        // Build list of types that actually have entries (excludes checklist — not rendered in PDF)
         final java.util.List<String> availableTypes = new java.util.ArrayList<>();
         for (String t : allTypes) {
+            if (EntryType.CHECKLIST.equals(t)) continue; // checklist items not exported in PDF
             for (Entry e : activeEntries) {
                 if (t.equals(e.getType())) { availableTypes.add(t); break; }
             }
@@ -822,11 +831,46 @@ public class SettingsActivity extends BaseActivity {
                 return;
             }
             dlg.dismiss();
-            showPdfPasswordDialog(filtered);
+            // Check if any selected entry has attachments — if so, ask what to export
+            boolean anyAttachments = false;
+            for (Entry e : filtered) {
+                if (!e.getAttachments().isEmpty()) { anyAttachments = true; break; }
+            }
+            if (anyAttachments) {
+                showExportChoiceDialog(filtered);
+            } else {
+                showPdfPasswordDialog(filtered, true);
+            }
         });
     }
 
-    private void showPdfPasswordDialog(List<Entry> entries) {
+    /**
+     * Shown when selected entries have attachments — lets user choose:
+     *   Text only  → PDF export
+     *   Files only → attachments ZIP (no PDF, no password)
+     *   Both       → PDF + attachments ZIP
+     */
+    private void showExportChoiceDialog(List<Entry> entries) {
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("What to export?")
+                .setItems(new String[]{
+                        "\uD83D\uDCC4  Text only  (PDF)",
+                        "\uD83D\uDCCE  Files only  (ZIP)",
+                        "\uD83D\uDDC2\uFE0F  Both  (PDF + attachments ZIP)"
+                }, (d, which) -> {
+                    if (which == 0) {
+                        showPdfPasswordDialog(entries, true);  // PDF, skip attachments
+                    } else if (which == 1) {
+                        shareAttachmentsOnly(entries);          // ZIP, no PDF
+                    } else {
+                        showPdfPasswordDialog(entries, false); // PDF then wrap in ZIP
+                    }
+                })
+                .setNegativeButton(getString(R.string.cancel), null)
+                .show();
+    }
+
+    private void showPdfPasswordDialog(List<Entry> entries, boolean textOnly) {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         int pad = dp(20);
@@ -857,11 +901,11 @@ public class SettingsActivity extends BaseActivity {
                 return;
             }
             dlg.dismiss();
-            generatePdf(entries, pass);
+            generatePdf(entries, pass, textOnly);
         });
     }
 
-    private void generatePdf(List<Entry> entries, String password) {
+    private void generatePdf(List<Entry> entries, String password, boolean textOnly) {
         AlertDialog progress = new MaterialAlertDialogBuilder(this)
                 .setTitle(getString(R.string.pdf_generating))
                 .setView(makeProgressBar())
@@ -921,13 +965,13 @@ public class SettingsActivity extends BaseActivity {
                 csRef[0].stroke();
                 yRef[0] -= 18f;
 
-                // Group entries by type
-                String[] types = {
-                        EntryType.WEBSITE, EntryType.CARD, EntryType.BANK,
-                        EntryType.PERSONAL, EntryType.PIN, EntryType.NOTE
-                };
+                // Group entries by type — preserve picker order, include custom categories
+                java.util.List<String> typeOrder = new java.util.ArrayList<>();
+                for (Entry e : entries) {
+                    if (!typeOrder.contains(e.getType())) typeOrder.add(e.getType());
+                }
 
-                for (String type : types) {
+                for (String type : typeOrder) {
                     List<Entry> group = new java.util.ArrayList<>();
                     for (Entry e : entries) if (type.equals(e.getType())) group.add(e);
                     if (group.isEmpty()) continue;
@@ -1033,16 +1077,211 @@ public class SettingsActivity extends BaseActivity {
                 doc.save(baos);
                 doc.close();
                 byte[] pdfBytes = baos.toByteArray();
+                final byte[] finalPdfBytes = pdfBytes;
 
                 runOnUiThread(() -> {
                     progress.dismiss();
-                    showPdfActionDialog(pdfBytes);
+                    if (!textOnly) {
+                        // "Both" mode — wrap PDF + attachments into a ZIP
+                        shareAsZip(finalPdfBytes, entries);
+                    } else {
+                        // "Text only" mode — share PDF directly
+                        showPdfActionDialog(finalPdfBytes);
+                    }
                 });
 
             } catch (Exception ex) {
                 runOnUiThread(() -> {
                     progress.dismiss();
                     Toast.makeText(this,
+                            getString(R.string.pdf_fail) + "\n" + ex.getMessage(),
+                            Toast.LENGTH_LONG).show();
+                });
+            }
+        }).start();
+    }
+
+    /**
+     * Packages only attachment files into a ZIP (no PDF) and shares it.
+     * Used for "Files only" export choice.
+     */
+    private void shareAttachmentsOnly(List<Entry> entries) {
+        AlertDialog progress = new MaterialAlertDialogBuilder(this)
+                .setTitle("Preparing export...")
+                .setView(makeProgressBar())
+                .setCancelable(false)
+                .create();
+        progress.show();
+
+        new Thread(() -> {
+            try {
+                java.io.File cacheDir = new java.io.File(getCacheDir(), "pdf_export");
+                //noinspection ResultOfMethodCallIgnored
+                cacheDir.mkdirs();
+                java.io.File zipFile = new java.io.File(cacheDir, "Cryptex_Export.zip");
+
+                try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(
+                        new java.io.FileOutputStream(zipFile))) {
+
+                    java.util.Set<String> usedPaths = new java.util.HashSet<>();
+                    AttachmentStore store = new AttachmentStore(SettingsActivity.this);
+                    for (Entry e : entries) {
+                        if (e.getAttachments().isEmpty()) continue;
+                        String safeTitle = e.getDisplayTitle()
+                                .replaceAll("[^a-zA-Z0-9_\\-]", "_");
+                        if (safeTitle.isEmpty()) safeTitle = "entry";
+
+                        String folder = "attachments/" + safeTitle;
+                        if (usedPaths.contains(folder)) {
+                            int n = 2;
+                            while (usedPaths.contains(folder + "_" + n)) n++;
+                            folder = folder + "_" + n;
+                        }
+                        usedPaths.add(folder);
+
+                        for (Attachment a : e.getAttachments()) {
+                            try {
+                                byte[] data = store.read(a.getId());
+                                String entryPath = folder + "/" + a.getName();
+                                if (usedPaths.contains(entryPath)) {
+                                    String base = a.getName();
+                                    String ext = "";
+                                    int dot = base.lastIndexOf('.');
+                                    if (dot > 0) { ext = base.substring(dot); base = base.substring(0, dot); }
+                                    int n = 2;
+                                    while (usedPaths.contains(folder + "/" + base + "_" + n + ext)) n++;
+                                    entryPath = folder + "/" + base + "_" + n + ext;
+                                }
+                                usedPaths.add(entryPath);
+                                zos.putNextEntry(new java.util.zip.ZipEntry(entryPath));
+                                zos.write(data);
+                                zos.closeEntry();
+                            } catch (Exception ignored) { }
+                        }
+                    }
+                }
+
+                Uri zipUri = androidx.core.content.FileProvider.getUriForFile(
+                        SettingsActivity.this,
+                        getPackageName() + ".fileprovider", zipFile);
+                Intent shareIntent = new Intent(Intent.ACTION_SEND);
+                shareIntent.setType("application/zip");
+                shareIntent.putExtra(Intent.EXTRA_STREAM, zipUri);
+                shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                Intent chooser = Intent.createChooser(shareIntent, "Share Export");
+                chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+                runOnUiThread(() -> {
+                    progress.dismiss();
+                    startActivity(chooser);
+                    if (isPdfOnlyMode) finish();
+                });
+
+            } catch (Exception ex) {
+                runOnUiThread(() -> {
+                    progress.dismiss();
+                    Toast.makeText(SettingsActivity.this,
+                            getString(R.string.pdf_fail) + "\n" + ex.getMessage(),
+                            Toast.LENGTH_LONG).show();
+                });
+            }
+        }).start();
+    }
+
+    /**
+     * Packages the PDF + all attachment files into a single ZIP and shares it.
+     * Structure:
+     *   Cryptex_Export.pdf
+     *   attachments/{entry_title}/{filename}
+     */
+    private void shareAsZip(byte[] pdfBytes, List<Entry> entries) {
+        AlertDialog progress = new MaterialAlertDialogBuilder(this)
+                .setTitle("Preparing export...")
+                .setView(makeProgressBar())
+                .setCancelable(false)
+                .create();
+        progress.show();
+
+        new Thread(() -> {
+            try {
+                java.io.File cacheDir = new java.io.File(getCacheDir(), "pdf_export");
+                //noinspection ResultOfMethodCallIgnored
+                cacheDir.mkdirs();
+                java.io.File zipFile = new java.io.File(cacheDir, "Cryptex_Export.zip");
+
+                try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(
+                        new java.io.FileOutputStream(zipFile))) {
+
+                    // 1. PDF
+                    zos.putNextEntry(new java.util.zip.ZipEntry(getString(R.string.pdf_filename)));
+                    zos.write(pdfBytes);
+                    zos.closeEntry();
+
+                    // 2. Attachments grouped by entry title
+                    // Use a set to track all ZIP paths already added — prevents silent overwrites
+                    // when two entries share the same safe-title or two attachments share a filename.
+                    java.util.Set<String> usedPaths = new java.util.HashSet<>();
+                    AttachmentStore store = new AttachmentStore(SettingsActivity.this);
+                    for (Entry e : entries) {
+                        if (e.getAttachments().isEmpty()) continue;
+                        String safeTitle = e.getDisplayTitle()
+                                .replaceAll("[^a-zA-Z0-9_\\-]", "_");
+                        if (safeTitle.isEmpty()) safeTitle = "entry";
+
+                        // If this safe-title folder is already taken by a previous entry, suffix with _2, _3 …
+                        String folder = "attachments/" + safeTitle;
+                        if (usedPaths.contains(folder)) {
+                            int n = 2;
+                            while (usedPaths.contains(folder + "_" + n)) n++;
+                            folder = folder + "_" + n;
+                        }
+                        usedPaths.add(folder);
+
+                        for (Attachment a : e.getAttachments()) {
+                            try {
+                                byte[] data = store.read(a.getId());
+                                // Deduplicate filenames within the same folder
+                                String entryPath = folder + "/" + a.getName();
+                                if (usedPaths.contains(entryPath)) {
+                                    String base = a.getName();
+                                    String ext = "";
+                                    int dot = base.lastIndexOf('.');
+                                    if (dot > 0) { ext = base.substring(dot); base = base.substring(0, dot); }
+                                    int n = 2;
+                                    while (usedPaths.contains(folder + "/" + base + "_" + n + ext)) n++;
+                                    entryPath = folder + "/" + base + "_" + n + ext;
+                                }
+                                usedPaths.add(entryPath);
+                                zos.putNextEntry(new java.util.zip.ZipEntry(entryPath));
+                                zos.write(data);
+                                zos.closeEntry();
+                            } catch (Exception ignored) {
+                                // Skip unreadable attachment — rest of ZIP still written
+                            }
+                        }
+                    }
+                }
+
+                Uri zipUri = androidx.core.content.FileProvider.getUriForFile(
+                        SettingsActivity.this,
+                        getPackageName() + ".fileprovider", zipFile);
+                Intent shareIntent = new Intent(Intent.ACTION_SEND);
+                shareIntent.setType("application/zip");
+                shareIntent.putExtra(Intent.EXTRA_STREAM, zipUri);
+                shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                Intent chooser = Intent.createChooser(shareIntent, "Share Export");
+                chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+                runOnUiThread(() -> {
+                    progress.dismiss();
+                    startActivity(chooser);
+                    if (isPdfOnlyMode) finish();
+                });
+
+            } catch (Exception ex) {
+                runOnUiThread(() -> {
+                    progress.dismiss();
+                    Toast.makeText(SettingsActivity.this,
                             getString(R.string.pdf_fail) + "\n" + ex.getMessage(),
                             Toast.LENGTH_LONG).show();
                 });

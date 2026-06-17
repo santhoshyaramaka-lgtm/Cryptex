@@ -35,6 +35,15 @@
                 android:textStyle="bold"/>
 
             <ImageButton
+                android:id="@+id/btnViewToggle"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Toggle view"
+                android:src="@drawable/ic_list"
+                app:tint="@color/white"/>
+
+            <ImageButton
                 android:id="@+id/btnSettings"
                 android:layout_width="40dp"
                 android:layout_height="40dp"

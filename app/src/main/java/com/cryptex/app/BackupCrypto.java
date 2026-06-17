@@ -150,27 +150,31 @@ public class BackupCrypto {
         public AttachmentItem(String id, byte[] data) { this.id = id; this.data = data; }
     }
 
-    /** Returned by {@link #decryptZip} — holds the entries JSON and all attachment bytes. */
+    /** Returned by {@link #decryptZip} — holds the entries JSON, attachment bytes, and custom categories. */
     public static class ZipContent {
         public final String json;
         public final List<AttachmentItem> attachments;
-        public ZipContent(String json, List<AttachmentItem> attachments) {
+        public final String customCategoriesJson; // v26: may be null for pre-v26 backups
+        public ZipContent(String json, List<AttachmentItem> attachments, String customCategoriesJson) {
             this.json = json;
             this.attachments = attachments;
+            this.customCategoriesJson = customCategoriesJson;
         }
     }
 
     /**
-     * Encrypts entries JSON and attachment bytes into a ZIP-format .cxb backup file.
+     * Encrypts entries JSON, attachment bytes, and custom category definitions
+     * into a ZIP-format .cxb backup file.
      * One PBKDF2 key is derived and shared across all entries to keep export fast.
      *
-     * @param json        entries JSON string (from StorageHelper.exportToJson)
-     * @param attachments list of (id, decrypted bytes) pairs; may be empty
-     * @param password    backup password chosen by the user
+     * @param json                  entries JSON string (from StorageHelper.exportToJson)
+     * @param attachments           list of (id, decrypted bytes) pairs; may be empty
+     * @param password              backup password chosen by the user
+     * @param customCategoriesJson  JSON string of custom category definitions; may be null
      * @return raw file bytes (standard ZIP — detectable by PK\x03\x04 magic)
      */
     public static byte[] encryptZip(String json, List<AttachmentItem> attachments,
-                                     String password) throws Exception {
+                                     String password, String customCategoriesJson) throws Exception {
         SecureRandom rng  = new SecureRandom();
         byte[] salt = new byte[SALT_LEN];
         rng.nextBytes(salt);
@@ -179,7 +183,7 @@ public class BackupCrypto {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(baos)) {
 
-            // 1. Raw salt — read first during decryptZip so the key can be derived once
+            // 1. Raw salt
             zos.putNextEntry(new java.util.zip.ZipEntry("salt"));
             zos.write(salt);
             zos.closeEntry();
@@ -195,6 +199,15 @@ public class BackupCrypto {
                 byte[] attEnc = encryptWithKey(item.data, key, rng);
                 zos.putNextEntry(new java.util.zip.ZipEntry("attachments/" + item.id + ".enc"));
                 zos.write(attEnc);
+                zos.closeEntry();
+            }
+
+            // 4. v26: Custom category definitions (plaintext JSON — not sensitive metadata)
+            if (customCategoriesJson != null && !customCategoriesJson.isEmpty()
+                    && !customCategoriesJson.equals("[]")) {
+                byte[] catsEnc = encryptWithKey(customCategoriesJson.getBytes("UTF-8"), key, rng);
+                zos.putNextEntry(new java.util.zip.ZipEntry("custom_categories.enc"));
+                zos.write(catsEnc);
                 zos.closeEntry();
             }
         }
@@ -226,9 +239,10 @@ public class BackupCrypto {
         }
         SecretKey key = deriveKey(password, salt);
 
-        // Pass 2: decrypt entries + attachments
+        // Pass 2: decrypt entries + attachments + custom categories
         String json = null;
         List<AttachmentItem> attachments = new ArrayList<>();
+        String customCategoriesJson = null;
         try (java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(
                 new java.io.ByteArrayInputStream(zipBytes))) {
             java.util.zip.ZipEntry entry;
@@ -242,14 +256,21 @@ public class BackupCrypto {
                         throw new WrongPasswordException("Wrong password or corrupted backup file.");
                     }
                 } else if (name.startsWith("attachments/") && name.endsWith(".enc")) {
-                    // File name pattern: attachments/{uuid}.enc — strip prefix and .enc suffix
                     String id = name.substring("attachments/".length(),
                             name.length() - ".enc".length());
                     byte[] enc = readZipEntry(zis);
                     try {
                         attachments.add(new AttachmentItem(id, decryptWithKey(enc, key)));
                     } catch (AEADBadTagException e) {
-                        // Skip corrupt individual attachment — don't abort the whole import
+                        // Skip corrupt individual attachment
+                    }
+                } else if ("custom_categories.enc".equals(name)) {
+                    // v26: custom category definitions
+                    byte[] enc = readZipEntry(zis);
+                    try {
+                        customCategoriesJson = new String(decryptWithKey(enc, key), "UTF-8");
+                    } catch (AEADBadTagException ignored) {
+                        // Non-critical — categories just won't restore
                     }
                 }
                 zis.closeEntry();
@@ -258,7 +279,7 @@ public class BackupCrypto {
         if (json == null) {
             throw new InvalidFileException("Not a valid Cryptex v2 backup (missing entries.enc).");
         }
-        return new ZipContent(json, attachments);
+        return new ZipContent(json, attachments, customCategoriesJson);
     }
 
     /**

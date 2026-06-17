@@ -49,7 +49,7 @@ public class PinActivity extends BaseActivity {
                 android.view.WindowManager.LayoutParams.FLAG_SECURE);
         setContentView(R.layout.activity_pin);
 
-        storage = new StorageHelper(this);
+        storage = StorageHelper.getInstance(this);
 
         layoutDots         = findViewById(R.id.layoutDots);
         tvAttempts         = findViewById(R.id.tvAttempts);

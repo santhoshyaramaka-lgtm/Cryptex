@@ -15,12 +15,18 @@ public class Attachment {
     private String name;      // Original filename shown to the user
     private String mimeType;  // MIME type e.g. "image/jpeg", "application/pdf"
     private long   size;      // File size in bytes (pre-encryption original size)
+    private String group;     // v27: optional group label e.g. "Payslips"; empty = ungrouped
 
     public Attachment(String id, String name, String mimeType, long size) {
+        this(id, name, mimeType, size, "");
+    }
+
+    public Attachment(String id, String name, String mimeType, long size, String group) {
         this.id       = id       != null ? id       : "";
         this.name     = name     != null ? name     : "";
         this.mimeType = mimeType != null ? mimeType : "";
         this.size     = size;
+        this.group    = group    != null ? group    : "";
     }
 
     // ── Getters ───────────────────────────────────────────────────────────────
@@ -28,10 +34,12 @@ public class Attachment {
     public String getName()     { return name; }
     public String getMimeType() { return mimeType; }
     public long   getSize()     { return size; }
+    public String getGroup()    { return group; }
 
     // ── Setters ───────────────────────────────────────────────────────────────
     public void setId(String id)             { this.id       = id != null ? id : ""; }
     public void setName(String name)         { this.name     = name != null ? name : ""; }
     public void setMimeType(String mimeType) { this.mimeType = mimeType != null ? mimeType : ""; }
     public void setSize(long size)           { this.size     = size; }
+    public void setGroup(String group)       { this.group    = group != null ? group : ""; }
 }

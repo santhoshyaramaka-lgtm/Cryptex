@@ -29,6 +29,9 @@ public class Entry {
     private List<Attachment> attachments = new ArrayList<>(); // v24: multiple attachments
     private boolean isArchived     = false; // v19: archived entries hidden from lists
     private List<ChecklistItem> checklistItems = new ArrayList<>(); // v20: checklist type
+    private List<String> attachmentGroups = new ArrayList<>(); // v29: named groups (including empty ones)
+    private List<CustomField> recordFields = new ArrayList<>(); // v29: per-record field definitions (custom categories only)
+    private boolean recordIncludeNotes = true; // v29: whether Notes field is shown for this record
 
     public Entry(String id, String type,
                  String field1, String field2, String field3,
@@ -94,6 +97,16 @@ public class Entry {
     // ── checklistItems (v20) ──────────────────────────────────────────────────
     public List<ChecklistItem> getChecklistItems()                         { return checklistItems; }
     public void                setChecklistItems(List<ChecklistItem> items){ this.checklistItems = items != null ? items : new ArrayList<>(); }
+
+    // ── attachmentGroups (v29) ────────────────────────────────────────────────
+    public List<String> getAttachmentGroups()                          { return attachmentGroups; }
+    public void         setAttachmentGroups(List<String> groups)       { this.attachmentGroups = groups != null ? groups : new ArrayList<>(); }
+
+    // ── recordFields + recordIncludeNotes (v29: per-record field defs) ────────
+    public List<CustomField> getRecordFields()                              { return recordFields; }
+    public void              setRecordFields(List<CustomField> fields)      { this.recordFields = fields != null ? fields : new ArrayList<>(); }
+    public boolean           isRecordIncludeNotes()                         { return recordIncludeNotes; }
+    public void              setRecordIncludeNotes(boolean include)         { this.recordIncludeNotes = include; }
 
     // ── Convenience: get field by 1-based index ───────────────────────────────
     public String getFieldByIndex(int index) {
