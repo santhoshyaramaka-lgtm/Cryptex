@@ -1,23 +1,30 @@
 package com.cryptex.app;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
- * Defines all 7 entry types, their field labels,
+ * Defines all 7 built-in entry types, their field labels,
  * which fields are secret (masked), and which are multiline.
  *
- * Field slots: field1 – field7
- * field7 is always "Notes" (multiline, 5 lines) for all non-checklist types.
- * v20: Added CHECKLIST as the 7th type.
+ * v26: Added dynamic custom category support via init() + in-memory cache.
+ * All existing switch-case methods are unchanged; custom IDs fall through
+ * to the dynamic resolver in the default branch.
  */
 public class EntryType {
 
     // ── Type Constants ────────────────────────────────────────────────────────
-    public static final String WEBSITE  = "website";
-    public static final String CARD     = "card";
-    public static final String BANK     = "bank";
-    public static final String PERSONAL = "personal";
-    public static final String PIN      = "pin";
-    public static final String NOTE     = "note";
+    public static final String WEBSITE   = "website";
+    public static final String CARD      = "card";
+    public static final String BANK      = "bank";
+    public static final String PERSONAL  = "personal";
+    public static final String PIN       = "pin";
+    public static final String NOTE      = "note";
     public static final String CHECKLIST = "checklist"; // v20
+    public static final String OTHERS    = "others";    // v29: built-in catch-all with per-record fields
+
+    /** Prefix that identifies a custom category ID (vs a built-in type constant). */
+    public static final String CUSTOM_PREFIX = "custom_";
 
     // ── Display Names ─────────────────────────────────────────────────────────
     public static String getDisplayName(String type) {
@@ -29,7 +36,10 @@ public class EntryType {
             case PIN:      return "PIN / Code";
             case NOTE:     return "Note";
             case CHECKLIST: return "Checklist"; // v20
-            default:       return "Unknown";
+            case OTHERS:    return "Others";    // v29
+            default:
+                CustomCategory cc = findCustom(type);
+                return cc != null ? cc.getName() : "Unknown";
         }
     }
 
@@ -43,7 +53,10 @@ public class EntryType {
             case PIN:      return "🔐";
             case NOTE:     return "📝";
             case CHECKLIST: return "☑️"; // v20
-            default:       return "📄";
+            case OTHERS:    return "📦"; // v29
+            default:
+                CustomCategory ccE = findCustom(type);
+                return ccE != null ? ccE.getEmoji() : "📁";
         }
     }
 
@@ -118,8 +131,12 @@ public class EntryType {
                         "",                 // field2–7 unused
                         "", "", "", "", ""
                 };
+            case OTHERS: // v29 — fields defined per-record; return empty as safe fallback
+                return new String[]{"Title", "", "", "", "", "", ""};
             default:
-                return new String[]{"Title", "", "", "", "", "", "Notes"};
+                CustomCategory ccF = findCustom(type);
+                return ccF != null ? ccF.getFieldLabels()
+                        : new String[]{"Title", "", "", "", "", "", "Notes"};
         }
     }
 
@@ -143,8 +160,12 @@ public class EntryType {
                 return new boolean[]{false, false, false, false, false, false, false};
             case CHECKLIST: // v20 — no secret fields
                 return new boolean[]{false, false, false, false, false, false, false};
-            default:
+            case OTHERS: // v29 — secret flags defined per-record
                 return new boolean[]{false, false, false, false, false, false, false};
+            default:
+                CustomCategory ccS = findCustom(type);
+                return ccS != null ? ccS.getSecretFlags()
+                        : new boolean[]{false, false, false, false, false, false, false};
         }
     }
 
@@ -184,7 +205,23 @@ public class EntryType {
                 if (total == 0) return "No items";
                 return checked + " of " + total + " done";
             }
+            case OTHERS: {
+                // Show first non-empty field after title as subtitle
+                String sub = e.getField2();
+                if (!sub.isEmpty()) return sub;
+                sub = e.getField3();
+                if (!sub.isEmpty()) return sub;
+                return "";
+            }
             default:
+                // Custom category — show first non-empty field after field1 as subtitle
+                if (isCustom(type)) {
+                    String sub = e.getField2();
+                    if (!sub.isEmpty()) return sub;
+                    sub = e.getField3();
+                    if (!sub.isEmpty()) return sub;
+                    return "";
+                }
                 return "";
         }
     }
@@ -205,6 +242,59 @@ public class EntryType {
 
     // ── All types (for tab/picker lists) ──────────────────────────────────────
     public static final String[] ALL_TYPES = {
-            WEBSITE, CARD, BANK, PERSONAL, PIN, NOTE, CHECKLIST
+            WEBSITE, CARD, BANK, PERSONAL, PIN, OTHERS, NOTE, CHECKLIST
     };
+
+    // ── v26: Dynamic custom category support ──────────────────────────────────
+
+    /**
+     * In-memory cache of custom categories loaded from StorageHelper.
+     * Populated by init() on every MainActivity.onResume() — cheap list copy,
+     * never touches disk. All resolver methods check this list in their
+     * default branch after the built-in switch-case.
+     */
+    private static List<CustomCategory> customCategories = new ArrayList<>();
+
+    /**
+     * Call this from MainActivity.onResume() after loading custom categories
+     * from StorageHelper.  Safe to call with null (treated as empty list).
+     */
+    public static void init(List<CustomCategory> customs) {
+        customCategories = customs != null ? customs : new ArrayList<>();
+    }
+
+    /** Returns true if the type string belongs to a user-created custom category. */
+    public static boolean isCustom(String type) {
+        return type != null && type.startsWith(CUSTOM_PREFIX);
+    }
+
+    /**
+     * Returns true if this type uses per-record field definitions.
+     * Covers both the built-in Others category and all user-created custom categories.
+     */
+    public static boolean isPerRecordFields(String type) {
+        return OTHERS.equals(type) || isCustom(type);
+    }
+
+    /** Looks up the CustomCategory for a given id, or null if not found. */
+    public static CustomCategory findCustom(String id) {
+        for (CustomCategory c : customCategories) {
+            if (c.getId().equals(id)) return c;
+        }
+        return null;
+    }
+
+    /**
+     * Returns all type IDs: the 7 built-in types followed by any custom
+     * categories currently loaded.  Replaces direct use of ALL_TYPES[] where
+     * a complete list is needed (home tiles, PDF picker, etc.).
+     */
+    public static String[] getAllTypes() {
+        String[] result = new String[ALL_TYPES.length + customCategories.size()];
+        System.arraycopy(ALL_TYPES, 0, result, 0, ALL_TYPES.length);
+        for (int i = 0; i < customCategories.size(); i++) {
+            result[ALL_TYPES.length + i] = customCategories.get(i).getId();
+        }
+        return result;
+    }
 }

@@ -43,6 +43,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".ManageCategoriesActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".TypeListActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />

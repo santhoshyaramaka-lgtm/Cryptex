@@ -133,8 +133,43 @@ public class EntryAdapter extends RecyclerView.Adapter<EntryAdapter.ViewHolder> 
                 entry.getDisplayTitle(), searchQuery));
 
         // ── Smart subtitle per type ───────────────────────────────────────────
-        holder.tvSubtitle.setText(highlight(holder.itemView.getContext(),
-                EntryType.getSubtitle(type, entry), searchQuery));
+        // Default subtitle for the type
+        String subtitle = EntryType.getSubtitle(type, entry);
+        // If a search is active and the default subtitle doesn't contain the query,
+        // look for the first non-secret, non-empty field that does and show it instead.
+        // This tells the user exactly which field matched, with the highlight on it.
+        if (!searchQuery.isEmpty()) {
+            String q = searchQuery.toLowerCase();
+            boolean subtitleMatches = subtitle.toLowerCase().contains(q)
+                    || entry.getDisplayTitle().toLowerCase().contains(q);
+            if (!subtitleMatches) {
+                String[] labels  = EntryType.getFieldLabels(type);
+                boolean[] secret = EntryType.getSecretFlags(type);
+                for (int i = 0; i < 7; i++) {
+                    if (secret[i]) continue;           // never expose secret fields
+                    if (labels[i].isEmpty()) continue; // skip unused slots
+                    String val = entry.getFieldByIndex(i + 1);
+                    if (val.toLowerCase().contains(q)) {
+                        // Truncate long values so the subtitle stays on one line
+                        String preview = val.length() > 40 ? val.substring(0, 40) + "…" : val;
+                        subtitle = labels[i] + ": " + preview;
+                        break;
+                    }
+                }
+            }
+            // If still no match from fields, check attachment filenames
+            if (!subtitleMatches && subtitle.equals(EntryType.getSubtitle(type, entry))) {
+                for (Attachment att : entry.getAttachments()) {
+                    if (att.getName().toLowerCase().contains(q)) {
+                        String preview = att.getName().length() > 40
+                                ? att.getName().substring(0, 40) + "…" : att.getName();
+                        subtitle = "📎 " + preview;
+                        break;
+                    }
+                }
+            }
+        }
+        holder.tvSubtitle.setText(highlight(holder.itemView.getContext(), subtitle, searchQuery));
 
         // ── Timestamp ─────────────────────────────────────────────────────────
         long updatedAt = entry.getUpdatedAt();

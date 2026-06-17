@@ -34,6 +34,9 @@
         <item name="buttonBarNegativeButtonStyle">@style/CryptexDialogButton</item>
         <item name="android:background">@color/card_bg</item>
         <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorAlertDialogListItem">@color/text_primary</item>
+        <item name="colorOnSurface">@color/text_primary</item>
     </style>
 
     <style name="CryptexDialogButton" parent="Widget.MaterialComponents.Button.TextButton.Dialog">
