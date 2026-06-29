@@ -15,8 +15,8 @@ public class ForgotPinActivity extends BaseActivity {
     // The security questions (index matches what is stored in prefs).
     // Index 2 = custom — actual text stored separately in KEY_SECURITY_Q_CUSTOM.
     public static final String[] QUESTIONS = {
-            "What is your planet?",
-            "How big is the universe?",
+            "What makes you happy?",
+            "What is your favorite food?",
             "Write my own question…"
     };
     public static final int CUSTOM_QUESTION_INDEX = 2;

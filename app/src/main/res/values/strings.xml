@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Cryptex</string>
-    <string name="app_version">Version 29.0</string>
     <string name="enter_pin">Enter PIN</string>
     <string name="set_pin">Set New PIN</string>
     <string name="confirm_pin">Confirm PIN</string>
@@ -33,7 +32,6 @@
     <string name="change_pin">Change PIN</string>
     <string name="export_data">Export Backup</string>
     <string name="import_data">Import Backup</string>
-    <string name="category_note">* Default categories cannot be deleted.</string>
 
     <!-- V7: PIN attempt limit & lock -->
     <string name="pin_attempts_left">%d attempt(s) remaining</string>
@@ -70,23 +68,6 @@
     <string name="last_backup">Last backup: %s</string>
     <string name="backup_updated">Backup updated successfully.</string>
     <string name="update_backup_no_export">No backup found. Please do a full Export first.</string>
-
-    <!-- V9/V24: Attachment -->
-    <string name="attachment_label">Attachment</string>
-    <string name="attachments_label">Attachments</string>
-    <string name="add_attachment"> Add Attachment / Group</string>
-    <string name="no_file_attached">No file attached</string>
-    <string name="no_attachment">No attachment</string>
-    <string name="attach_btn">Attach</string>
-    <string name="change_btn">Change</string>
-    <string name="open_btn">Open</string>
-    <string name="remove_btn">Remove</string>
-    <string name="attachment_removed">Attachment removed.</string>
-    <string name="attachment_size_warning">Large file — backup size will increase.</string>
-    <string name="file_too_large">File too large. Maximum size is 5 MB.</string>
-    <string name="confirm_remove_attachment">Remove this attachment? This cannot be undone.</string>
-    <string name="no_app_to_open">No app found to open this file type.</string>
-    <string name="attachment_open_error">Could not open file.</string>
 
     <!-- v17: Export as PDF -->
     <string name="export_pdf">Export as PDF</string>
@@ -129,35 +110,6 @@
     <string name="show_archived">Show Archived</string>
     <string name="hide_archived">Hide Archived</string>
 
-    <!-- Onboarding -->
-    <string name="onboarding_agree_title">User Agreement &amp; Data Notice</string>
-    <string name="onboarding_agree_body">1. YOUR DATA STAYS ON YOUR DEVICE\n\nAll entries are encrypted and stored only on this device. Nothing is sent to any server, cloud, or third party. Cryptex has zero access to your data.\n\n2. YOUR PIN IS YOUR KEY\n\nYour 4-digit PIN protects everything. Cryptex does not store or know your PIN — there is no "forgot PIN" via email or phone number.\n\n3. RECOVERY OPTIONS\n\n✅ Forgot PIN?\nAnswer your security question (set in the next step) to reset your PIN.\n\n✅ Have a backup (.cxb file)?\nUninstall and reinstall the app, then import your backup using your backup password to restore all your data.\n\n❌ Forgot PIN + forgot security answer + no backup?\nData cannot be recovered. There is no override or reset.\n\n❌ Have a backup but forgot the backup password?\nThe backup cannot be decrypted. The password is never stored anywhere — not even by Cryptex.\n\n4. DATA SECURITY\n\nYour data is encrypted with AES-256-GCM. It cannot be read without your password.\n\n⚠️ Your data can only be accessed by someone who knows your PIN or backup password. Keep them private. If someone gains physical access to your device AND knows your PIN, they can access your data.\n\n5. NO WARRANTY / LIMITATION OF LIABILITY\n\nCryptex and its developer provide this app "as is" with no warranty. The developer is NOT responsible for:\n• Loss of data due to forgotten PIN, lost backup, or device failure\n• Unauthorised access if your PIN or password is disclosed\n• Any damage arising from use or inability to use this app\n\nYou use Cryptex entirely at your own risk. You are solely responsible for keeping your credentials safe.\n\n6. YOUR RESPONSIBILITY\n\n• Remember or safely store your PIN\n• Set a strong backup password\n• Export backups regularly\n• Keep your backup file safe\n• Never share your PIN or password\n\nBy tapping "I Agree", you confirm you have read, understood, and accepted all of the above.</string>
-    <string name="onboarding_agree_btn">I Agree &amp; Continue</string>
-    <string name="onboarding_scroll_hint">Scroll to the bottom to continue</string>
-    <string name="onboarding_howit_title">Welcome to Cryptex</string>
-    <string name="onboarding_howit_subtitle">Your personal encrypted vault</string>
-    <string name="onboarding_feature_1">🔐  AES-256-GCM encryption — unbreakable without your password</string>
-    <string name="onboarding_feature_2">📴  No internet, no cloud, no tracking — everything stays on your device</string>
-    <string name="onboarding_feature_3">🔑  PIN lock with optional fingerprint unlock</string>
-    <string name="onboarding_feature_4">🛡️  Security question — recover access if you forget your PIN</string>
-    <string name="onboarding_feature_5">💾  Encrypted backup &amp; restore with your own password</string>
-    <string name="onboarding_next_btn">Next</string>
-    <string name="onboarding_sq_title">Set Your Recovery Question</string>
-    <string name="onboarding_sq_subtitle">If you ever forget your PIN, this is your only way back in. Choose a question and an answer you will never forget.</string>
-    <string name="onboarding_sq_pick_hint">Select a question…</string>
-    <string name="onboarding_sq_answer_hint">Your answer…</string>
-    <string name="onboarding_sq_save_btn">Save &amp; Continue</string>
-    <string name="onboarding_sq_empty_q">Please select a question.</string>
-    <string name="onboarding_sq_empty_a">Please enter your answer.</string>
-    <string name="onboarding_reminder_title">Before You Set Your PIN</string>
-    <string name="onboarding_reminder_headline">THE ONLY WAY YOUR DATA CAN BE ACCESSED IS IF SOMEONE KNOWS YOUR PIN OR BACKUP PASSWORD.</string>
-    <string name="onboarding_reminder_body">Not by Cryptex.\nNot by hackers (without your key).\nNot by anyone — without your password.\n\nThe encryption is mathematically unbreakable without the correct key. Your choice of PIN and backup password IS your security.</string>
-    <string name="onboarding_reminder_tip1">✅  Choose a PIN only you know</string>
-    <string name="onboarding_reminder_tip2">✅  Use a strong backup password</string>
-    <string name="onboarding_reminder_tip3">✅  Never share either with anyone</string>
-    <string name="onboarding_reminder_tip4">✅  Your security is entirely in your hands</string>
-    <string name="onboarding_reminder_btn">I Understand — Set My PIN</string>
-
     <!-- PIN lock screen rotating taglines -->
     <string-array name="pin_taglines">
         <item>Your secrets, your device, your control.</item>
@@ -170,9 +122,9 @@
         <item>No account. No tracking. No exceptions.</item>
     </string-array>
 
-    <!-- Backup tip dialog (shown once on first MainActivity open) -->
-    <string name="backup_tip_title">💡 Protect Your Data — Set Up Backup</string>
-    <string name="backup_tip_message">Your data is encrypted on this device only. If you lose your phone, you lose your data — unless you have a backup.\n\nHere\'s how to stay safe:\n\n1️⃣  Settings → Export Backup\nSave your backup (.cxb) to Google Drive, OneDrive, Dropbox, or any cloud storage you use.\n\n2️⃣  Turn on Auto-Backup\nYour backup updates automatically every time you make a change.\n\nExport once. Auto-Backup does the rest.</string>
-    <string name="backup_tip_setup">Set Up Backup</string>
+    <!-- First-launch tip dialog (shown once on first app entry) -->
+    <string name="backup_tip_title">⚠️ Two things to set up in Settings</string>
+    <string name="backup_tip_message">Before you start adding entries, take a moment to protect your data:\n\n🔐  Security Question\nGo to Settings → Security Question. This is the only way to recover access if you forget your PIN.\n\n💾  Create a Backup\nGo to Settings → Export Backup. Save the backup file to Google Drive or any cloud storage. Turn on Auto-Backup so it stays up to date.\n\nWithout these, a forgotten PIN or lost device means your data is gone forever.</string>
+    <string name="backup_tip_setup">Go to Settings</string>
     <string name="backup_tip_later">Later</string>
 </resources>
