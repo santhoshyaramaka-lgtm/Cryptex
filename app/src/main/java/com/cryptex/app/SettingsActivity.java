@@ -37,7 +37,6 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
-
 public class SettingsActivity extends BaseActivity {
 
     private StorageHelper storage;
@@ -172,6 +171,13 @@ public class SettingsActivity extends BaseActivity {
         updateAutoLockValue();
         updateSecurityQValue();
         updateBackupCard();
+
+        // Set version label dynamically from build
+        try {
+            String vn = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+            ((android.widget.TextView) findViewById(R.id.tvAppVersion))
+                    .setText("Version " + vn);
+        } catch (Exception ignored) {}
     }
 
     // v12: Auto-lock gap fix — save/check timestamp in SettingsActivity
@@ -186,7 +192,6 @@ public class SettingsActivity extends BaseActivity {
         super.onResume();
         if (isPdfOnlyMode) return; // PDF-only mode — no auto-lock check, no card refresh
         if (checkAndHandleAutoLock()) return;
-        EntryType.init(storage.loadCustomCategories());
         updateBackupCard();
     }
 
@@ -297,22 +302,7 @@ public class SettingsActivity extends BaseActivity {
                 String json = storage.exportToJson(entries);
                 if (json == null) throw new Exception("JSON serialisation failed.");
 
-                // v24: collect attachment files for ZIP backup
-                AttachmentStore attachmentStore = new AttachmentStore(this);
-                java.util.List<BackupCrypto.AttachmentItem> attachmentItems = new java.util.ArrayList<>();
-                for (Entry entry : entries) {
-                    for (Attachment att : entry.getAttachments()) {
-                        try {
-                            byte[] data = attachmentStore.read(att.getId());
-                            attachmentItems.add(new BackupCrypto.AttachmentItem(att.getId(), data));
-                        } catch (Exception ignored) {
-                            // Skip unreadable attachment — rest of backup still exports
-                        }
-                    }
-                }
-
-                byte[] encrypted = BackupCrypto.encryptZip(json, attachmentItems, password,
-                        storage.exportCustomCategoriesJson());
+                byte[] encrypted = BackupCrypto.encryptZip(json, password);
 
                 try (java.io.OutputStream os = getContentResolver().openOutputStream(uri)) {
                     if (os == null) throw new Exception("Cannot open output stream.");
@@ -391,28 +381,12 @@ public class SettingsActivity extends BaseActivity {
                 byte[] fileBytes = readAllBytes(uri);
 
                 List<Entry> imported;
-                AttachmentStore attachmentStore = new AttachmentStore(this);
 
                 if (BackupCrypto.isZipBackup(fileBytes)) {
                     // ── v24 ZIP format ──────────────────────────────────────────
                     BackupCrypto.ZipContent zipContent = BackupCrypto.decryptZip(fileBytes, password);
                     imported = storage.importFromJson(zipContent.json);
                     if (imported == null) throw new Exception("Corrupted backup data.");
-                    // Restore attachment files
-                    for (BackupCrypto.AttachmentItem item : zipContent.attachments) {
-                        try {
-                            attachmentStore.writeById(item.id, item.data);
-                        } catch (Exception ignored) {
-                            // Skip unrestorable attachment — entry still imports
-                        }
-                    }
-                    // v26: Restore custom categories (merge, skip duplicates)
-                    if (zipContent.customCategoriesJson != null
-                            && !zipContent.customCategoriesJson.equals("[]")) {
-                        List<CustomCategory> importedCats =
-                                storage.importCustomCategoriesFromJson(zipContent.customCategoriesJson);
-                        if (importedCats != null) storage.mergeCustomCategories(importedCats);
-                    }
                 } else {
                     // ── Legacy blob format (pre-v24) ────────────────────────────
                     String json = BackupCrypto.decrypt(fileBytes, password);
@@ -668,68 +642,93 @@ public class SettingsActivity extends BaseActivity {
         return et;
     }
 
+    /** Forces the soft keyboard open as soon as the dialog window is attached. */
+    private void showKeyboardFor(AlertDialog dialog, EditText et) {
+        dialog.setOnShowListener(d -> {
+            // Set window to always-visible so the system doesn't suppress the keyboard
+            if (dialog.getWindow() != null) {
+                dialog.getWindow().setSoftInputMode(
+                        android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE
+                        | android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+            }
+            et.requestFocus();
+            // postDelayed gives the window time to gain full focus before forcing keyboard
+            et.postDelayed(() -> {
+                android.view.inputmethod.InputMethodManager imm =
+                        (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                if (imm != null) imm.showSoftInput(et,
+                        android.view.inputmethod.InputMethodManager.SHOW_FORCED);
+            }, 100);
+        });
+    }
+
     private void showCurrentPinDialog() {
+        // Single dialog with all 3 fields — keyboard opens once and stays open
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(20);
+        layout.setPadding(pad, dp(8), pad, 0);
+
         EditText etCurrent = makePinInput();
-        new MaterialAlertDialogBuilder(this)
-                .setTitle("Change PIN")
-                .setMessage("Enter your current PIN")
-                .setView(etCurrent)
-                .setPositiveButton("Next", (d, w) -> {
-                    String entered = etCurrent.getText().toString().trim();
-                    if (storage.checkPin(entered)) {
-                        showNewPinDialog();
-                    } else {
-                        Toast.makeText(this, "Incorrect PIN. Try again.", Toast.LENGTH_SHORT).show();
-                    }
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
+        etCurrent.setHint("Current PIN");
+        layout.addView(etCurrent);
 
-    private void showNewPinDialog() {
         EditText etNew = makePinInput();
-        new MaterialAlertDialogBuilder(this)
-                .setTitle("Change PIN")
-                .setMessage("Enter your new PIN")
-                .setView(etNew)
-                .setCancelable(false)
-                .setPositiveButton("Next", (d, w) -> {
-                    String newPin = etNew.getText().toString().trim();
-                    if (newPin.length() == 4) {
-                        showConfirmPinDialog(newPin);
-                    } else {
-                        Toast.makeText(this, "PIN must be 4 digits.", Toast.LENGTH_SHORT).show();
-                    }
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
+        etNew.setHint("New PIN");
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(12);
+        etNew.setLayoutParams(lp);
+        layout.addView(etNew);
 
-    private void showConfirmPinDialog(String newPin) {
         EditText etConfirm = makePinInput();
-        new MaterialAlertDialogBuilder(this)
+        etConfirm.setHint("Confirm new PIN");
+        LinearLayout.LayoutParams lp2 = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp2.topMargin = dp(12);
+        etConfirm.setLayoutParams(lp2);
+        layout.addView(etConfirm);
+
+        AlertDialog dialog = new MaterialAlertDialogBuilder(this)
                 .setTitle("Change PIN")
-                .setMessage("Confirm your new PIN")
-                .setView(etConfirm)
-                .setCancelable(false)
-                .setPositiveButton("Save", (d, w) -> {
-                    String confirmed = etConfirm.getText().toString().trim();
-                    if (confirmed.equals(newPin)) {
-                        storage.savePin(newPin);
-                        Toast.makeText(this, "PIN changed successfully!", Toast.LENGTH_SHORT).show();
-                    } else {
-                        Toast.makeText(this, "PINs do not match. Try again.", Toast.LENGTH_SHORT).show();
-                    }
-                })
+                .setView(layout)
+                .setPositiveButton("Save", null)
                 .setNegativeButton("Cancel", null)
-                .show();
+                .create();
+        showKeyboardFor(dialog, etCurrent);
+        dialog.show();
+
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String current = etCurrent.getText().toString().trim();
+            String newPin  = etNew.getText().toString().trim();
+            String confirm = etConfirm.getText().toString().trim();
+
+            if (!storage.checkPin(current)) {
+                etCurrent.setError("Incorrect PIN");
+                etCurrent.requestFocus();
+                return;
+            }
+            if (newPin.length() != 4) {
+                etNew.setError("Must be 4 digits");
+                etNew.requestFocus();
+                return;
+            }
+            if (!newPin.equals(confirm)) {
+                etConfirm.setError("PINs do not match");
+                etConfirm.requestFocus();
+                return;
+            }
+            storage.savePin(newPin);
+            dialog.dismiss();
+            Toast.makeText(this, "PIN changed successfully!", Toast.LENGTH_SHORT).show();
+        });
     }
 
     // ── v17: Biometric enable confirmation ────────────────────────────────────
 
     private void showBiometricEnableConfirm(Switch switchBiometric) {
         EditText etPin = makePinInput();
-        new MaterialAlertDialogBuilder(this)
+        AlertDialog dialog = new MaterialAlertDialogBuilder(this)
                 .setTitle(getString(R.string.biometric_unlock))
                 .setMessage(getString(R.string.biometric_verify_pin))
                 .setView(etPin)
@@ -749,7 +748,9 @@ public class SettingsActivity extends BaseActivity {
                 .setNegativeButton(getString(R.string.cancel), (d, w) ->
                         switchBiometric.setChecked(false))
                 .setOnCancelListener(d -> switchBiometric.setChecked(false))
-                .show();
+                .create();
+        showKeyboardFor(dialog, etPin);
+        dialog.show();
     }
 
     // ── v17: PDF Export ───────────────────────────────────────────────────────
@@ -777,8 +778,8 @@ public class SettingsActivity extends BaseActivity {
     }
 
     private void showPdfCategoryPicker(List<Entry> activeEntries) {
-        // Only show types that have at least one active entry (built-in + custom, excludes checklist)
-        final String[] allTypes = EntryType.getAllTypes();
+        // Only show types that have at least one active entry (built-in, excludes checklist)
+        final String[] allTypes = EntryType.ALL_TYPES;
 
         // Build list of types that actually have entries (excludes checklist — not rendered in PDF)
         final java.util.List<String> availableTypes = new java.util.ArrayList<>();
@@ -831,43 +832,8 @@ public class SettingsActivity extends BaseActivity {
                 return;
             }
             dlg.dismiss();
-            // Check if any selected entry has attachments — if so, ask what to export
-            boolean anyAttachments = false;
-            for (Entry e : filtered) {
-                if (!e.getAttachments().isEmpty()) { anyAttachments = true; break; }
-            }
-            if (anyAttachments) {
-                showExportChoiceDialog(filtered);
-            } else {
-                showPdfPasswordDialog(filtered, true);
-            }
+            showPdfPasswordDialog(filtered, true);
         });
-    }
-
-    /**
-     * Shown when selected entries have attachments — lets user choose:
-     *   Text only  → PDF export
-     *   Files only → attachments ZIP (no PDF, no password)
-     *   Both       → PDF + attachments ZIP
-     */
-    private void showExportChoiceDialog(List<Entry> entries) {
-        new MaterialAlertDialogBuilder(this)
-                .setTitle("What to export?")
-                .setItems(new String[]{
-                        "\uD83D\uDCC4  Text only  (PDF)",
-                        "\uD83D\uDCCE  Files only  (ZIP)",
-                        "\uD83D\uDDC2\uFE0F  Both  (PDF + attachments ZIP)"
-                }, (d, which) -> {
-                    if (which == 0) {
-                        showPdfPasswordDialog(entries, true);  // PDF, skip attachments
-                    } else if (which == 1) {
-                        shareAttachmentsOnly(entries);          // ZIP, no PDF
-                    } else {
-                        showPdfPasswordDialog(entries, false); // PDF then wrap in ZIP
-                    }
-                })
-                .setNegativeButton(getString(R.string.cancel), null)
-                .show();
     }
 
     private void showPdfPasswordDialog(List<Entry> entries, boolean textOnly) {
@@ -1081,207 +1047,13 @@ public class SettingsActivity extends BaseActivity {
 
                 runOnUiThread(() -> {
                     progress.dismiss();
-                    if (!textOnly) {
-                        // "Both" mode — wrap PDF + attachments into a ZIP
-                        shareAsZip(finalPdfBytes, entries);
-                    } else {
-                        // "Text only" mode — share PDF directly
-                        showPdfActionDialog(finalPdfBytes);
-                    }
+                    showPdfActionDialog(finalPdfBytes);
                 });
 
             } catch (Exception ex) {
                 runOnUiThread(() -> {
                     progress.dismiss();
                     Toast.makeText(this,
-                            getString(R.string.pdf_fail) + "\n" + ex.getMessage(),
-                            Toast.LENGTH_LONG).show();
-                });
-            }
-        }).start();
-    }
-
-    /**
-     * Packages only attachment files into a ZIP (no PDF) and shares it.
-     * Used for "Files only" export choice.
-     */
-    private void shareAttachmentsOnly(List<Entry> entries) {
-        AlertDialog progress = new MaterialAlertDialogBuilder(this)
-                .setTitle("Preparing export...")
-                .setView(makeProgressBar())
-                .setCancelable(false)
-                .create();
-        progress.show();
-
-        new Thread(() -> {
-            try {
-                java.io.File cacheDir = new java.io.File(getCacheDir(), "pdf_export");
-                //noinspection ResultOfMethodCallIgnored
-                cacheDir.mkdirs();
-                java.io.File zipFile = new java.io.File(cacheDir, "Cryptex_Export.zip");
-
-                try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(
-                        new java.io.FileOutputStream(zipFile))) {
-
-                    java.util.Set<String> usedPaths = new java.util.HashSet<>();
-                    AttachmentStore store = new AttachmentStore(SettingsActivity.this);
-                    for (Entry e : entries) {
-                        if (e.getAttachments().isEmpty()) continue;
-                        String safeTitle = e.getDisplayTitle()
-                                .replaceAll("[^a-zA-Z0-9_\\-]", "_");
-                        if (safeTitle.isEmpty()) safeTitle = "entry";
-
-                        String folder = "attachments/" + safeTitle;
-                        if (usedPaths.contains(folder)) {
-                            int n = 2;
-                            while (usedPaths.contains(folder + "_" + n)) n++;
-                            folder = folder + "_" + n;
-                        }
-                        usedPaths.add(folder);
-
-                        for (Attachment a : e.getAttachments()) {
-                            try {
-                                byte[] data = store.read(a.getId());
-                                String entryPath = folder + "/" + a.getName();
-                                if (usedPaths.contains(entryPath)) {
-                                    String base = a.getName();
-                                    String ext = "";
-                                    int dot = base.lastIndexOf('.');
-                                    if (dot > 0) { ext = base.substring(dot); base = base.substring(0, dot); }
-                                    int n = 2;
-                                    while (usedPaths.contains(folder + "/" + base + "_" + n + ext)) n++;
-                                    entryPath = folder + "/" + base + "_" + n + ext;
-                                }
-                                usedPaths.add(entryPath);
-                                zos.putNextEntry(new java.util.zip.ZipEntry(entryPath));
-                                zos.write(data);
-                                zos.closeEntry();
-                            } catch (Exception ignored) { }
-                        }
-                    }
-                }
-
-                Uri zipUri = androidx.core.content.FileProvider.getUriForFile(
-                        SettingsActivity.this,
-                        getPackageName() + ".fileprovider", zipFile);
-                Intent shareIntent = new Intent(Intent.ACTION_SEND);
-                shareIntent.setType("application/zip");
-                shareIntent.putExtra(Intent.EXTRA_STREAM, zipUri);
-                shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                Intent chooser = Intent.createChooser(shareIntent, "Share Export");
-                chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-
-                runOnUiThread(() -> {
-                    progress.dismiss();
-                    startActivity(chooser);
-                    if (isPdfOnlyMode) finish();
-                });
-
-            } catch (Exception ex) {
-                runOnUiThread(() -> {
-                    progress.dismiss();
-                    Toast.makeText(SettingsActivity.this,
-                            getString(R.string.pdf_fail) + "\n" + ex.getMessage(),
-                            Toast.LENGTH_LONG).show();
-                });
-            }
-        }).start();
-    }
-
-    /**
-     * Packages the PDF + all attachment files into a single ZIP and shares it.
-     * Structure:
-     *   Cryptex_Export.pdf
-     *   attachments/{entry_title}/{filename}
-     */
-    private void shareAsZip(byte[] pdfBytes, List<Entry> entries) {
-        AlertDialog progress = new MaterialAlertDialogBuilder(this)
-                .setTitle("Preparing export...")
-                .setView(makeProgressBar())
-                .setCancelable(false)
-                .create();
-        progress.show();
-
-        new Thread(() -> {
-            try {
-                java.io.File cacheDir = new java.io.File(getCacheDir(), "pdf_export");
-                //noinspection ResultOfMethodCallIgnored
-                cacheDir.mkdirs();
-                java.io.File zipFile = new java.io.File(cacheDir, "Cryptex_Export.zip");
-
-                try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(
-                        new java.io.FileOutputStream(zipFile))) {
-
-                    // 1. PDF
-                    zos.putNextEntry(new java.util.zip.ZipEntry(getString(R.string.pdf_filename)));
-                    zos.write(pdfBytes);
-                    zos.closeEntry();
-
-                    // 2. Attachments grouped by entry title
-                    // Use a set to track all ZIP paths already added — prevents silent overwrites
-                    // when two entries share the same safe-title or two attachments share a filename.
-                    java.util.Set<String> usedPaths = new java.util.HashSet<>();
-                    AttachmentStore store = new AttachmentStore(SettingsActivity.this);
-                    for (Entry e : entries) {
-                        if (e.getAttachments().isEmpty()) continue;
-                        String safeTitle = e.getDisplayTitle()
-                                .replaceAll("[^a-zA-Z0-9_\\-]", "_");
-                        if (safeTitle.isEmpty()) safeTitle = "entry";
-
-                        // If this safe-title folder is already taken by a previous entry, suffix with _2, _3 …
-                        String folder = "attachments/" + safeTitle;
-                        if (usedPaths.contains(folder)) {
-                            int n = 2;
-                            while (usedPaths.contains(folder + "_" + n)) n++;
-                            folder = folder + "_" + n;
-                        }
-                        usedPaths.add(folder);
-
-                        for (Attachment a : e.getAttachments()) {
-                            try {
-                                byte[] data = store.read(a.getId());
-                                // Deduplicate filenames within the same folder
-                                String entryPath = folder + "/" + a.getName();
-                                if (usedPaths.contains(entryPath)) {
-                                    String base = a.getName();
-                                    String ext = "";
-                                    int dot = base.lastIndexOf('.');
-                                    if (dot > 0) { ext = base.substring(dot); base = base.substring(0, dot); }
-                                    int n = 2;
-                                    while (usedPaths.contains(folder + "/" + base + "_" + n + ext)) n++;
-                                    entryPath = folder + "/" + base + "_" + n + ext;
-                                }
-                                usedPaths.add(entryPath);
-                                zos.putNextEntry(new java.util.zip.ZipEntry(entryPath));
-                                zos.write(data);
-                                zos.closeEntry();
-                            } catch (Exception ignored) {
-                                // Skip unreadable attachment — rest of ZIP still written
-                            }
-                        }
-                    }
-                }
-
-                Uri zipUri = androidx.core.content.FileProvider.getUriForFile(
-                        SettingsActivity.this,
-                        getPackageName() + ".fileprovider", zipFile);
-                Intent shareIntent = new Intent(Intent.ACTION_SEND);
-                shareIntent.setType("application/zip");
-                shareIntent.putExtra(Intent.EXTRA_STREAM, zipUri);
-                shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                Intent chooser = Intent.createChooser(shareIntent, "Share Export");
-                chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-
-                runOnUiThread(() -> {
-                    progress.dismiss();
-                    startActivity(chooser);
-                    if (isPdfOnlyMode) finish();
-                });
-
-            } catch (Exception ex) {
-                runOnUiThread(() -> {
-                    progress.dismiss();
-                    Toast.makeText(SettingsActivity.this,
                             getString(R.string.pdf_fail) + "\n" + ex.getMessage(),
                             Toast.LENGTH_LONG).show();
                 });

@@ -157,17 +157,6 @@ public class EntryAdapter extends RecyclerView.Adapter<EntryAdapter.ViewHolder> 
                     }
                 }
             }
-            // If still no match from fields, check attachment filenames
-            if (!subtitleMatches && subtitle.equals(EntryType.getSubtitle(type, entry))) {
-                for (Attachment att : entry.getAttachments()) {
-                    if (att.getName().toLowerCase().contains(q)) {
-                        String preview = att.getName().length() > 40
-                                ? att.getName().substring(0, 40) + "…" : att.getName();
-                        subtitle = "📎 " + preview;
-                        break;
-                    }
-                }
-            }
         }
         holder.tvSubtitle.setText(highlight(holder.itemView.getContext(), subtitle, searchQuery));
 
@@ -179,10 +168,6 @@ public class EntryAdapter extends RecyclerView.Adapter<EntryAdapter.ViewHolder> 
         } else {
             holder.tvTimestamp.setVisibility(View.GONE);
         }
-
-        // ── v9: Attachment indicator ──────────────────────────────────────────
-        holder.tvAttachIndicator.setVisibility(
-                entry.hasAttachment() ? View.VISIBLE : View.GONE);
 
         // ── v19: Archived badge ────────────────────────────────────────────────
         boolean archived = entry.isArchived();
@@ -249,7 +234,7 @@ public class EntryAdapter extends RecyclerView.Adapter<EntryAdapter.ViewHolder> 
 
     static class ViewHolder extends RecyclerView.ViewHolder {
         CardView  card;
-        TextView  tvTitle, tvSubtitle, tvIcon, tvTimestamp, tvAttachIndicator, tvArchivedBadge;
+        TextView  tvTitle, tvSubtitle, tvIcon, tvTimestamp, tvArchivedBadge;
         ImageView ivStar, ivCheck, ivChevron;
 
         ViewHolder(View view) {
@@ -259,7 +244,6 @@ public class EntryAdapter extends RecyclerView.Adapter<EntryAdapter.ViewHolder> 
             tvSubtitle         = view.findViewById(R.id.tvSubtitle);
             tvIcon             = view.findViewById(R.id.tvIcon);
             tvTimestamp        = view.findViewById(R.id.tvTimestamp);
-            tvAttachIndicator  = view.findViewById(R.id.tvAttachIndicator);
             tvArchivedBadge    = view.findViewById(R.id.tvArchivedBadge);
             ivStar             = view.findViewById(R.id.ivStar);
             ivCheck            = view.findViewById(R.id.ivCheck);

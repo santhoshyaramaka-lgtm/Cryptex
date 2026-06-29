@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29"/>
-    <uses-permission android:name="android.permission.CAMERA"/>
+
 
     <application
         android:allowBackup="false"
@@ -13,9 +11,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.MS">
 
-        <!-- Onboarding: LAUNCHER — redirects existing users immediately, shows onboarding only on fresh install -->
+        <!-- PinActivity: LAUNCHER entry point -->
         <activity
-            android:name=".OnboardingActivity"
+            android:name=".PinActivity"
             android:exported="true"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
@@ -23,11 +21,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
-        <activity
-            android:name=".PinActivity"
-            android:exported="false"
-            android:windowSoftInputMode="adjustResize" />
 
         <activity
             android:name=".MainActivity"
@@ -43,13 +36,13 @@
             android:exported="false" />
 
         <activity
-            android:name=".ManageCategoriesActivity"
-            android:exported="false" />
-
-        <activity
             android:name=".TypeListActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".ManageCategoriesActivity"
+            android:exported="false" />
 
         <activity
             android:name=".ForgotPinActivity"

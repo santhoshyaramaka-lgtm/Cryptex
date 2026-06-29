@@ -73,16 +73,6 @@
 
         </LinearLayout>
 
-        <!-- v9: Attachment indicator -->
-        <TextView
-            android:id="@+id/tvAttachIndicator"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="4dp"
-            android:text="📎"
-            android:textSize="14sp"
-            android:visibility="gone"/>
-
         <!-- v19: Archived badge -->
         <TextView
             android:id="@+id/tvArchivedBadge"

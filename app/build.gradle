@@ -15,10 +15,7 @@ plugins {
 // ✅ Auto-copy → after assembleRelease, APK is copied to Cryptex_Key/ folder
 //    with the name Cryptex-v{versionName}-release.apk
 //
-// ✅ To release a new version: bump versionCode and versionName in defaultConfig,
-//    then run:  .\gradlew.bat assembleRelease
-//    Output:   app\build\outputs\apk\release\Cryptex-v{X.X}-release.apk
-//              Cryptex_Key\Cryptex-v{X.X}-release.apk  (auto-copy)
+// ✅ To release a new version: just run assembleRelease — version is auto-set to today's date (yyyyMMdd)
 //
 // ════════════════════════════════════════════════════════════════════════════
 // KNOWN BUILD FAILURE CAUSES & FIXES  (learned from past failures)
@@ -70,8 +67,8 @@ android {
         applicationId "com.cryptex.app"
         minSdk 23
         targetSdk 35
-        versionCode 29
-        versionName "29.0"
+        versionCode new Date().format('yyyyMMdd').toInteger()
+        versionName new Date().format('yyyyMMdd')
     }
 
     signingConfigs {
