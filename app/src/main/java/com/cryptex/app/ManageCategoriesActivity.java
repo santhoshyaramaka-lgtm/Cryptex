@@ -29,11 +29,9 @@ public class ManageCategoriesActivity extends BaseActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_manage_categories);
 
-        storage    = StorageHelper.getInstance(this);
+        storage     = StorageHelper.getInstance(this);
         hiddenTypes = storage.getHiddenTypes();
         allEntries  = storage.loadEntries();
-
-        EntryType.init(storage.loadCustomCategories());
 
         findViewById(R.id.btnBack).setOnClickListener(v -> finish());
 
@@ -48,7 +46,7 @@ public class ManageCategoriesActivity extends BaseActivity {
     private class CategoryVisibilityAdapter
             extends RecyclerView.Adapter<CategoryVisibilityAdapter.VH> {
 
-        private final String[] allTypes = EntryType.getAllTypes();
+        private final String[] allTypes = EntryType.ALL_TYPES;
 
         @Override
         public VH onCreateViewHolder(ViewGroup parent, int viewType) {

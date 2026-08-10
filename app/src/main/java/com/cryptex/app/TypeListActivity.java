@@ -42,7 +42,6 @@ import java.util.Set;
 public class TypeListActivity extends BaseActivity {
 
     private StorageHelper        storage;
-    private AttachmentStore      attachmentStore;
     private List<Entry>          allEntries;
     private List<Entry>   filteredEntries;
     private EntryAdapter  adapter;
@@ -77,7 +76,6 @@ public class TypeListActivity extends BaseActivity {
         if (entryType == null) entryType = EntryType.WEBSITE;
 
         storage         = StorageHelper.getInstance(this);
-        attachmentStore = new AttachmentStore(this);
         allEntries      = new ArrayList<>();
         filteredEntries = new ArrayList<>();
 
@@ -187,7 +185,6 @@ public class TypeListActivity extends BaseActivity {
     protected void onResume() {
         super.onResume();
         if (checkAndHandleAutoLock()) return;
-        EntryType.init(storage.loadCustomCategories());
         allEntries.clear();
         allEntries.addAll(storage.loadEntries());
         searchQuery = "";
@@ -300,141 +297,23 @@ public class TypeListActivity extends BaseActivity {
         Set<String> ids = adapter.getSelectedIds();
         if (ids.isEmpty()) return;
 
-        // Collect selected entries in current list order
         List<Entry> selected = new ArrayList<>();
         for (Entry e : filteredEntries) {
             if (ids.contains(e.getId())) selected.add(e);
         }
 
-        // Check if any entry has attachments
-        boolean hasAnyAttachment = false;
-        for (Entry e : selected) {
-            if (!e.getAttachments().isEmpty()) { hasAnyAttachment = true; break; }
-        }
-
         int count = selected.size();
         String countLabel = count == 1 ? "1 entry" : count + " entries";
 
-        if (!hasAnyAttachment) {
-            // No attachments — share text directly with a simple confirm
-            new MaterialAlertDialogBuilder(this)
-                    .setTitle("Share Entries")
-                    .setMessage("Share " + countLabel + " as plain text?")
-                    .setPositiveButton("Share", (d, w) -> shareSelectedText(selected))
-                    .setNegativeButton("Cancel", null)
-                    .show();
-            return;
-        }
-
-        // Has attachments — offer Text / Attachments only / Both via radio list
-        final int[] choice = {0}; // 0 = Text, 1 = Attachments only, 2 = Both
-        String[] options = {"Text", "Attachments only", "Both (text + attachments)"};
-        final List<Entry> finalSelected = selected;
         new MaterialAlertDialogBuilder(this)
-                .setTitle("Share " + countLabel + " as")
-                .setSingleChoiceItems(options, 0, (d, which) -> choice[0] = which)
-                .setPositiveButton("Share", (d, w) -> {
-                    if (choice[0] == 1) shareSelectedAttachments(finalSelected);
-                    else if (choice[0] == 2) shareSelectedBoth(finalSelected);
-                    else shareSelectedText(finalSelected);
-                })
+                .setTitle("Share Entries")
+                .setMessage("Share " + countLabel + " as plain text?")
+                .setPositiveButton("Share", (d, w) -> shareSelectedText(selected))
                 .setNegativeButton("Cancel", null)
                 .show();
     }
 
-    /** Recursively deletes all contents of a directory (not the dir itself). */
-    private static void clearDir(File dir) {
-        if (dir == null || !dir.exists()) return;
-        File[] files = dir.listFiles();
-        if (files == null) return;
-        for (File f : files) {
-            if (f.isDirectory()) clearDir(f);
-            //noinspection ResultOfMethodCallIgnored
-            f.delete();
-        }
-    }
-
-    /** Shares text files + attachment files together, per entry in list order. */
-    private void shareSelectedBoth(List<Entry> selected) {
-        ProgressBar pb = new ProgressBar(this);
-        pb.setIndeterminate(true);
-        int pad = Math.round(24 * getResources().getDisplayMetrics().density);
-        pb.setPadding(pad, pad, pad, pad);
-        AlertDialog progress = new MaterialAlertDialogBuilder(this)
-                .setTitle("Preparing share...")
-                .setView(pb)
-                .setCancelable(false)
-                .create();
-        progress.show();
-
-        new Thread(() -> {
-            try {
-                File cacheDir = new File(getCacheDir(), "attachments/multi_share");
-                clearDir(cacheDir); // clear stale files from previous share sessions
-                //noinspection ResultOfMethodCallIgnored
-                cacheDir.mkdirs();
-
-                ArrayList<Uri> uris = new ArrayList<>();
-
-                for (Entry e : selected) {
-                    String safeId = e.getId() != null ? e.getId() : "entry";
-                    File entryDir = new File(cacheDir, safeId);
-                    //noinspection ResultOfMethodCallIgnored
-                    entryDir.mkdirs();
-
-                    // 1. Text file for this entry
-                    String txtName = e.getDisplayTitle().replaceAll("[^a-zA-Z0-9_\\-]", "_");
-                    if (txtName.isEmpty()) txtName = "entry";
-                    File txtFile = new File(entryDir, txtName + ".txt");
-                    try (FileOutputStream fos = new FileOutputStream(txtFile)) {
-                        fos.write(buildEntryText(e).getBytes("UTF-8"));
-                    }
-                    uris.add(FileProvider.getUriForFile(TypeListActivity.this,
-                            getPackageName() + ".fileprovider", txtFile));
-
-                    // 2. Attachment files for this entry, in order
-                    for (Attachment a : e.getAttachments()) {
-                        try {
-                            byte[] bytes = attachmentStore.read(a.getId());
-                            File attFile = new File(entryDir, a.getName());
-                            try (FileOutputStream fos = new FileOutputStream(attFile)) { fos.write(bytes); }
-                            uris.add(FileProvider.getUriForFile(TypeListActivity.this,
-                                    getPackageName() + ".fileprovider", attFile));
-                        } catch (Exception ignored) { /* skip unreadable */ }
-                    }
-                }
-
-                final Intent shareIntent;
-                if (uris.size() == 1) {
-                    shareIntent = new Intent(Intent.ACTION_SEND);
-                    shareIntent.setType("*/*");
-                    shareIntent.putExtra(Intent.EXTRA_STREAM, uris.get(0));
-                    shareIntent.setClipData(ClipData.newRawUri("", uris.get(0)));
-                } else {
-                    shareIntent = new Intent(Intent.ACTION_SEND_MULTIPLE);
-                    shareIntent.setType("*/*");
-                    shareIntent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
-                    ClipData clip = ClipData.newRawUri("", uris.get(0));
-                    for (int i = 1; i < uris.size(); i++) clip.addItem(new ClipData.Item(uris.get(i)));
-                    shareIntent.setClipData(clip);
-                }
-                shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                Intent chooser = Intent.createChooser(shareIntent, "Share via");
-                chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-
-                runOnUiThread(() -> { progress.dismiss(); startActivity(chooser); });
-
-            } catch (Exception e) {
-                runOnUiThread(() -> {
-                    progress.dismiss();
-                    Toast.makeText(TypeListActivity.this,
-                            "Could not prepare files.", Toast.LENGTH_SHORT).show();
-                });
-            }
-        }).start();
-    }
-
-    /** Builds formatted text for a single entry (used by both share methods). */
+    /** Shares formatted text for all selected entries. */
     private String buildEntryText(Entry e) {
         StringBuilder sb = new StringBuilder();
         if (EntryType.CHECKLIST.equals(e.getType())) {
@@ -480,102 +359,16 @@ public class TypeListActivity extends BaseActivity {
         startActivity(Intent.createChooser(intent, "Share via"));
     }
 
-    /** Shares only the attachment files of all selected entries, in entry list order. */
-    private void shareSelectedAttachments(List<Entry> selected) {
-        ProgressBar pb = new ProgressBar(this);
-        pb.setIndeterminate(true);
-        int pad = Math.round(24 * getResources().getDisplayMetrics().density);
-        pb.setPadding(pad, pad, pad, pad);
-        AlertDialog progress = new MaterialAlertDialogBuilder(this)
-                .setTitle("Preparing share...")
-                .setView(pb)
-                .setCancelable(false)
-                .create();
-        progress.show();
-
-        new Thread(() -> {
-            try {
-                File cacheDir = new File(getCacheDir(), "attachments/multi_share");
-                clearDir(cacheDir); // clear stale files from previous share sessions
-                //noinspection ResultOfMethodCallIgnored
-                cacheDir.mkdirs();
-
-                ArrayList<Uri> uris = new ArrayList<>();
-
-                for (Entry e : selected) {
-                    if (e.getAttachments().isEmpty()) continue;
-                    String safeId = e.getId() != null ? e.getId() : "entry";
-                    File entryDir = new File(cacheDir, safeId);
-                    //noinspection ResultOfMethodCallIgnored
-                    entryDir.mkdirs();
-                    for (Attachment a : e.getAttachments()) {
-                        try {
-                            byte[] bytes = attachmentStore.read(a.getId());
-                            File attFile = new File(entryDir, a.getName());
-                            try (FileOutputStream fos = new FileOutputStream(attFile)) { fos.write(bytes); }
-                            uris.add(FileProvider.getUriForFile(TypeListActivity.this,
-                                    getPackageName() + ".fileprovider", attFile));
-                        } catch (Exception ignored) { /* skip unreadable */ }
-                    }
-                }
-
-                if (uris.isEmpty()) {
-                    runOnUiThread(() -> {
-                        progress.dismiss();
-                        Toast.makeText(TypeListActivity.this,
-                                "No attachments could be read.", Toast.LENGTH_SHORT).show();
-                    });
-                    return;
-                }
-
-                final Intent shareIntent;
-                if (uris.size() == 1) {
-                    shareIntent = new Intent(Intent.ACTION_SEND);
-                    shareIntent.setType("*/*");
-                    shareIntent.putExtra(Intent.EXTRA_STREAM, uris.get(0));
-                    shareIntent.setClipData(ClipData.newRawUri("", uris.get(0)));
-                } else {
-                    shareIntent = new Intent(Intent.ACTION_SEND_MULTIPLE);
-                    shareIntent.setType("*/*");
-                    shareIntent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
-                    ClipData clip = ClipData.newRawUri("", uris.get(0));
-                    for (int i = 1; i < uris.size(); i++) clip.addItem(new ClipData.Item(uris.get(i)));
-                    shareIntent.setClipData(clip);
-                }
-                shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                Intent chooser = Intent.createChooser(shareIntent, "Share via");
-                chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-
-                runOnUiThread(() -> { progress.dismiss(); startActivity(chooser); });
-
-            } catch (Exception e) {
-                runOnUiThread(() -> {
-                    progress.dismiss();
-                    Toast.makeText(TypeListActivity.this,
-                            "Could not read attachments.", Toast.LENGTH_SHORT).show();
-                });
-            }
-        }).start();
-    }
-
     private void deleteSelected() {
         Set<String> ids = adapter.getSelectedIds();
-        // Collect attachment IDs for all selected entries before removing from list
-        List<Attachment> attachmentsToDelete = new ArrayList<>();
-        for (Entry e : allEntries) {
-            if (ids.contains(e.getId())) attachmentsToDelete.addAll(e.getAttachments());
-        }
         allEntries.removeIf(e -> ids.contains(e.getId()));
         filteredEntries.removeIf(e -> ids.contains(e.getId()));
-        // Save and delete attachment files in background — bulk delete should feel instant
         final String json = storage.exportToJson(allEntries);
-        final List<Attachment> toDelete = attachmentsToDelete;
         new Thread(() -> {
             if (json != null) {
-                storage.saveEntriesJson(json); // save first — orphaned .enc files are harmless, broken references are not
+                storage.saveEntriesJson(json);
                 storage.setBackupPending(true);
             }
-            attachmentStore.deleteAll(toDelete);
         }).start();
         exitSelectionMode();
         adapter.notifyDataSetChanged();
@@ -598,13 +391,6 @@ public class TypeListActivity extends BaseActivity {
             if (lastEntry != null && !lastEntry.getRecordFields().isEmpty()) {
                 templateFields = lastEntry.getRecordFields();
                 templateNotes  = lastEntry.isRecordIncludeNotes();
-            } else if (EntryType.isCustom(entryType)) {
-                // Custom category — fall back to category-level fields as template
-                CustomCategory cat = EntryType.findCustom(entryType);
-                if (cat != null) {
-                    templateFields = cat.getFields();
-                    templateNotes  = cat.isIncludeNotes();
-                }
             }
             // OTHERS built-in — no category-level fields, templateFields stays empty (correct)
             final List<CustomField> finalTemplate = templateFields;

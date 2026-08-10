@@ -1,13 +1,9 @@
 package com.cryptex.app;
 
-import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.PackageManager;
-import android.content.pm.ResolveInfo;
-import android.net.Uri;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
@@ -17,25 +13,15 @@ import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import androidx.activity.result.ActivityResultLauncher;
-import androidx.activity.result.contract.ActivityResultContracts;
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.content.FileProvider;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStream;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -81,44 +67,31 @@ public class DetailActivity extends BaseActivity {
 
     // Top-bar buttons
     private ImageButton btnEdit, btnShare, btnDelete, btnArchive, btnOverflow;
+    private ImageButton btnNoteFormat; // Note type only — format picker in edit mode
+
+    // Card type detection label (edit mode only, Card type only)
+    private TextView cardTypeLabelView = null;
 
     // v9: Unsaved-changes action bar
     private LinearLayout saveActionBar;
-
-    // v24: Attachment state (replaces single pendingAttachmentName/Data from v9)
-    private static final int  MAX_ATTACHMENT_COUNT  = 50;
-    private static final long MAX_TOTAL_BYTES       = 200L * 1024 * 1024; // 200 MB total per entry
-    private static final long MAX_SINGLE_BYTES      =  20L * 1024 * 1024; // 20 MB per file
-    private AttachmentStore attachmentStore;
-    // Files the user has added in this edit session but not yet saved
-    private final List<PendingAttachment> pendingAdds = new ArrayList<>();
-    // IDs of existing saved attachments the user has removed in this edit session
-    private final Set<String> pendingRemovals = new HashSet<>();
-    // Original names of saved attachments renamed this session — used to revert on discard
-    private final java.util.Map<String, String> renamedOriginals = new java.util.HashMap<>();
-    // Original groups of saved attachments moved this session — used to revert on discard
-    private final java.util.Map<String, String> originalGroups = new java.util.HashMap<>();
-    // Pending group name renames: old group name → new group name
-    private final java.util.Map<String, String> renamedGroups = new java.util.LinkedHashMap<>();
-    // Groups created this session with no files yet — shown as empty headers with [+]
-    private final java.util.LinkedHashSet<String> pendingEmptyGroups = new java.util.LinkedHashSet<>();
-    // Groups explicitly deleted via "Delete Group" this session — used to detect unsaved changes
-    private final java.util.LinkedHashSet<String> deletedGroups = new java.util.LinkedHashSet<>();
 
     // v12: Clipboard auto-clear
     private static final long CLIPBOARD_CLEAR_DELAY_MS = 30_000; // 30 seconds
     private final android.os.Handler clipboardHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     private Runnable clipboardClearRunnable = null;
 
-    // v24: Attachment section views — bound in setupAttachmentSection()
-    private LinearLayout attachmentListContainer;
-    private LinearLayout attachmentSearchContainer; // persistent search bar container — never cleared
-    private TextView     btnAddAttachment;
-    private boolean      attachmentsExpanded = false; // VIEW mode: 2+ files collapsed by default
-
     // v12: Created date label shown in VIEW mode
     private TextView    tvCreatedAt;
     private View        noteEndDivider; // shown at end of Note body in VIEW mode only
+
+    // Note-body formatting toolbar (edit mode only)
+    private static final int FORMAT_PARAGRAPH = 0;
+    private static final int FORMAT_BULLET    = 1;
+    private static final int FORMAT_NUMBERED  = 2;
+    private static final int FORMAT_HEADING   = 3;
+    private int              activeNoteFormat  = FORMAT_PARAGRAPH;
+    private LinearLayout     noteFormatToolbar = null;
+    private final TextView[] noteFormatBtns    = new TextView[4];
 
     // v20: Checklist views
     private boolean      checklistRendering = false; // re-entrancy guard for renderChecklist()
@@ -137,13 +110,6 @@ public class DetailActivity extends BaseActivity {
     private View                       checklistAddRowSecondary;
     private boolean                    isCommittingAddItem = false; // guard: prevent focus-loss deactivation during commit
 
-    // v9: File picker launchers — single for when 1 slot remains, multi for 2–5 slots
-    private ActivityResultLauncher<String[]>       attachmentPicker;
-    private ActivityResultLauncher<String[]>       singleFilePicker;
-    // v20: Camera capture launcher
-    private ActivityResultLauncher<Uri>      cameraPicker;
-    private Uri                              cameraOutputUri = null; // temp file URI for capture
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -153,7 +119,6 @@ public class DetailActivity extends BaseActivity {
 
         storage = StorageHelper.getInstance(this);
         entries = storage.loadEntries();
-        attachmentStore = new AttachmentStore(this); // v24
 
         // ── Resolve entry / type ──────────────────────────────────────────────
         String entryId = getIntent().getStringExtra("entry_id");
@@ -179,6 +144,52 @@ public class DetailActivity extends BaseActivity {
         btnDelete       = findViewById(R.id.btnDelete);
         btnArchive      = findViewById(R.id.btnArchive);
         btnOverflow     = findViewById(R.id.btnOverflow);
+        btnNoteFormat   = findViewById(R.id.btnNoteFormat);
+        btnNoteFormat.setOnClickListener(v -> {
+            android.widget.PopupMenu popup = new android.widget.PopupMenu(this, btnNoteFormat);
+            String[] labels = { "¶  Free text", "•  Bullet", "1.  Numbered", "H  Heading" };
+            for (int i = 0; i < labels.length; i++) {
+                String label = (i == activeNoteFormat ? "✓  " : "     ") + labels[i];
+                popup.getMenu().add(0, i, i, label);
+            }
+            popup.setOnMenuItemClickListener(item -> {
+                int fmt = item.getItemId();
+                activeNoteFormat = fmt;
+                updateNoteFormatIcon();
+                // If cursor is on an empty line, insert prefix immediately
+                EditText body = editViews[6];
+                if (body == null || fmt == FORMAT_PARAGRAPH) return true;
+                android.text.Editable e = body.getText();
+                int cursor = body.getSelectionStart();
+                if (cursor < 0) cursor = e.length();
+                int lineStart = cursor;
+                while (lineStart > 0 && e.charAt(lineStart - 1) != '\n') lineStart--;
+                int lineEnd = cursor;
+                while (lineEnd < e.length() && e.charAt(lineEnd) != '\n') lineEnd++;
+                String currentLine = e.subSequence(lineStart, lineEnd).toString();
+                if (!currentLine.trim().isEmpty()) return true;
+                String prefix = "";
+                switch (fmt) {
+                    case FORMAT_BULLET:   prefix = "\u2022 "; break;
+                    case FORMAT_NUMBERED:
+                        int prevEnd   = lineStart > 0 ? lineStart - 1 : 0;
+                        int prevStart = prevEnd;
+                        while (prevStart > 0 && e.charAt(prevStart - 1) != '\n') prevStart--;
+                        String prevLine = lineStart > 0 ? e.subSequence(prevStart, prevEnd).toString() : "";
+                        java.util.regex.Matcher m =
+                                java.util.regex.Pattern.compile("^(\\d+)\\.\\s").matcher(prevLine);
+                        prefix = m.find() ? (Integer.parseInt(m.group(1)) + 1) + ". " : "1. ";
+                        break;
+                    case FORMAT_HEADING:  prefix = "## "; break;
+                }
+                if (!prefix.isEmpty()) {
+                    e.replace(lineStart, lineEnd, prefix);
+                    body.setSelection(lineStart + prefix.length());
+                }
+                return true;
+            });
+            popup.show();
+        });
 
         // v29: Load per-record fields for custom categories and Others
         if (EntryType.isPerRecordFields(entryType)) {
@@ -202,12 +213,7 @@ public class DetailActivity extends BaseActivity {
                     } catch (Exception ignored) {}
                 }
             } else {
-                // Existing record with no recordFields — fall back to category fields
-                CustomCategory cat = EntryType.findCustom(entryType);
-                if (cat != null) {
-                    activeRecordFields       = new ArrayList<>(cat.getFields());
-                    activeRecordIncludeNotes = cat.isIncludeNotes();
-                }
+                // Existing record with no recordFields and no intent fields — nothing to load
             }
         }
 
@@ -221,24 +227,6 @@ public class DetailActivity extends BaseActivity {
                 saveActionBar.setVisibility(View.GONE));
         findViewById(R.id.btnBarDiscard).setOnClickListener(v -> {
             saveActionBar.setVisibility(View.GONE);
-            pendingAdds.clear();     // v24: discard any un-saved picks — files not written yet
-            pendingRemovals.clear(); // v24: discard removals — files not deleted yet
-            // Revert any in-memory renames back to their original names
-            if (existingEntry != null) {
-                for (Attachment a : existingEntry.getAttachments()) {
-                    String origName = renamedOriginals.get(a.getId());
-                    if (origName != null) a.setName(origName);
-                    String origGroup = originalGroups.get(a.getId());
-                    if (origGroup != null) a.setGroup(origGroup);
-                }
-            }
-            renamedOriginals.clear();
-            originalGroups.clear();
-            renamedGroups.clear();
-            expandedGroups.clear();
-            userCollapsedGroups.clear();
-            pendingEmptyGroups.clear();
-            deletedGroups.clear();
             finish();
         });
 
@@ -303,52 +291,22 @@ public class DetailActivity extends BaseActivity {
                             existingEntry.setFavourite(false);
                             existingEntry.setPinnedAt(0);
                         }
-                        // v24: if archiving, delete attachment files (archived entries cannot be opened)
-                        final List<Attachment> attachmentsToDelete = nowArchived
-                                ? new ArrayList<>(existingEntry.getAttachments())
-                                : java.util.Collections.emptyList();
-                        if (nowArchived) existingEntry.setAttachments(new ArrayList<>());
                         // Serialize on main thread, write on background, finish() AFTER write
                         // so TypeListActivity.onResume() never reads stale data
                         final String json = storage.exportToJson(entries);
                         if (json != null) {
                             new Thread(() -> {
-                                storage.saveEntriesJson(json); // save first — orphaned .enc files are harmless, broken references are not
+                                storage.saveEntriesJson(json);
                                 storage.setBackupPending(true);
-                                if (!attachmentsToDelete.isEmpty())
-                                    attachmentStore.deleteAll(attachmentsToDelete);
                                 runOnUiThread(() -> finish());
                             }).start();
                         } else {
-                            new Thread(() -> {
-                                if (!attachmentsToDelete.isEmpty())
-                                    attachmentStore.deleteAll(attachmentsToDelete);
-                                runOnUiThread(() -> finish());
-                            }).start();
+                            finish();
                         }
                     })
                     .setNegativeButton(getString(R.string.cancel), null)
                     .show();
         });
-
-        // v9: Register file picker launchers
-        attachmentPicker = registerForActivityResult(
-                new ActivityResultContracts.OpenMultipleDocuments(),
-                uris -> {
-                    if (uris != null && !uris.isEmpty()) handleAttachmentsPicked(uris);
-                });
-        singleFilePicker = registerForActivityResult(
-                new ActivityResultContracts.OpenDocument(),
-                uri -> {
-                    if (uri != null) handleAttachmentsPicked(java.util.Collections.singletonList(uri));
-                });
-
-        // v20: Register camera capture launcher
-        cameraPicker = registerForActivityResult(
-                new ActivityResultContracts.TakePicture(),
-                success -> {
-                    if (success && cameraOutputUri != null) handleCameraCapture();
-                });
 
         // ── Build field rows ──────────────────────────────────────────────────
         LinearLayout container = findViewById(R.id.fieldsContainer);
@@ -404,7 +362,7 @@ public class DetailActivity extends BaseActivity {
                 if (editViews[0] != null) editViews[0].setText(existingEntry.getField1());
                 if (editViews[6] != null) editViews[6].setText(existingEntry.getField7());
                 if (viewTexts[0] != null) viewTexts[0].setText(existingEntry.getField1());
-                if (viewTexts[6] != null) viewTexts[6].setText(existingEntry.getField7());
+                if (viewTexts[6] != null) viewTexts[6].setText(renderNoteBodySpanned(existingEntry.getField7()));
             }
         } else {
             // All other types (built-in + custom) — normal field rows
@@ -427,8 +385,12 @@ public class DetailActivity extends BaseActivity {
             if (existingEntry != null) {
                 for (int i = 0; i < 7; i++) {
                     String val = existingEntry.getFieldByIndex(i + 1);
+                    // Card number: pre-format with spaces so TextWatcher starts clean
+                    if (EntryType.CARD.equals(entryType) && i == 2) {
+                        val = formatCardNumber(val);
+                    }
                     if (editViews[i]  != null) editViews[i].setText(val);
-                    if (viewTexts[i]  != null) setViewText(i, val);
+                    if (viewTexts[i]  != null) setViewText(i, existingEntry.getFieldByIndex(i + 1));
                 }
             }
         }
@@ -439,9 +401,6 @@ public class DetailActivity extends BaseActivity {
 
         // ── Apply initial mode UI ─────────────────────────────────────────────
         applyModeUI();
-
-        // v24: Setup attachment section (replaces v9 setupAttachmentRow)
-        setupAttachmentSection();
     }
 
     // ── Mode switching ────────────────────────────────────────────────────────
@@ -458,23 +417,25 @@ public class DetailActivity extends BaseActivity {
     private void switchToEditMode() {
         isEditMode = true;
         saveActionBar.setVisibility(View.GONE); // ensure bar is hidden when entering edit
-        // Clear attachment search so edit mode always shows the full list
-        attachmentSearchVisible = false;
-        attachmentSearchQuery = "";
-        attachmentSearchEt = null;
         // Freshly populate edit fields from the live entry values
         for (int i = 0; i < 7; i++) {
             if (editViews[i] != null && existingEntry != null) {
-                editViews[i].setText(existingEntry.getFieldByIndex(i + 1));
+                String val = existingEntry.getFieldByIndex(i + 1);
+                // Card number: pre-format with spaces before entering edit mode
+                if (EntryType.CARD.equals(entryType) && i == 2) {
+                    val = formatCardNumber(val);
+                }
+                editViews[i].setText(val);
             }
         }
         applyModeUI();
-        renderAttachmentList(); // v24: refresh attachment list for edit mode
     }
 
     private void switchToViewMode() {
         isEditMode = false;
         saveActionBar.setVisibility(View.GONE); // ensure action bar hidden on save
+        // Note format icon must be hidden immediately on any mode switch to view
+        if (btnNoteFormat != null) btnNoteFormat.setVisibility(View.GONE);
         // Sync view texts from the freshly saved entry
         for (int i = 0; i < 7; i++) {
             if (viewTexts[i] != null && existingEntry != null) {
@@ -482,7 +443,6 @@ public class DetailActivity extends BaseActivity {
             }
         }
         applyModeUI();
-        renderAttachmentList();
     }
 
     private void applyModeUI() {
@@ -544,6 +504,7 @@ public class DetailActivity extends BaseActivity {
             }
             // v12: hide "Added:" label in EDIT mode
             if (tvCreatedAt != null) tvCreatedAt.setVisibility(View.GONE);
+            // Card type label: keep current visibility (driven by TextWatcher)
 
         } else {
             // ── VIEW mode ─────────────────────────────────────────────────────
@@ -626,7 +587,6 @@ public class DetailActivity extends BaseActivity {
     protected void onResume() {
         super.onResume();
         if (checkAndHandleAutoLock()) return;
-        EntryType.init(storage.loadCustomCategories());
     }
 
     @Override
@@ -680,11 +640,6 @@ public class DetailActivity extends BaseActivity {
 
     /** Returns true if any edit field differs from the stored entry value. */
     private boolean hasUnsavedChanges() {
-        // v24: pending attachment adds, removals, or renames are unsaved changes
-        if (!pendingAdds.isEmpty() || !pendingRemovals.isEmpty() || !renamedOriginals.isEmpty()
-                || !originalGroups.isEmpty() || !renamedGroups.isEmpty()
-                || !pendingEmptyGroups.isEmpty() || !deletedGroups.isEmpty()) return true;
-
         if (existingEntry == null) {
             // New entry: any non-empty field = unsaved change
             for (int i = 0; i < 7; i++) {
@@ -708,10 +663,6 @@ public class DetailActivity extends BaseActivity {
     private void resetReveal(int i) {
         if (!secretFlags[i]) return;
         revealed[i] = false;
-        // Reset eye button icon back to closed
-        if (eyeButtons[i] != null) {
-            eyeButtons[i].setImageResource(R.drawable.ic_eye_off);
-        }
         // Re-mask the edit field
         if (editViews[i] != null) {
             editViews[i].setInputType(
@@ -726,16 +677,22 @@ public class DetailActivity extends BaseActivity {
         }
     }
 
-    /** Sets the eye and edit field to OPEN/visible for edit mode entry. */
+    /** Sets the edit field to OPEN/visible for edit mode entry. */
     private void setRevealOpen(int i) {
         if (!secretFlags[i]) return;
         revealed[i] = true;
-        if (eyeButtons[i] != null) {
-            eyeButtons[i].setImageResource(R.drawable.ic_eye);
-        }
         if (editViews[i] != null) {
-            editViews[i].setInputType(
-                    InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+            // Numeric-only fields must stay on numeric keypad even when revealed
+            // Card number and Expiry use TYPE_CLASS_PHONE to allow space/slash insertion by TextWatcher
+            boolean isPhoneInput = EntryType.CARD.equals(entryType) && (i == 2 || i == 3);
+            boolean isNumeric = (EntryType.CARD.equals(entryType) && (i == 4 || i == 5))
+                    || (EntryType.BANK.equals(entryType) && i == 2)
+                    || (EntryType.PIN.equals(entryType) && i == 1);
+            editViews[i].setInputType(isPhoneInput
+                    ? InputType.TYPE_CLASS_PHONE
+                    : isNumeric
+                            ? InputType.TYPE_CLASS_NUMBER
+                            : InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
             int len = editViews[i].getText().length();
             if (len > 0) editViews[i].setSelection(len);
         }
@@ -1156,20 +1113,10 @@ public class DetailActivity extends BaseActivity {
         tvBody.setBackground(null);
         tvBody.setPadding(0, 0, 0, 0);
         tvBody.setLineSpacing(0, 1.4f);
+        tvBody.setTextIsSelectable(true); // Note body: native text selection in view mode
         LinearLayout.LayoutParams bodyVP = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         tvBody.setLayoutParams(bodyVP);
-        tvBody.setOnLongClickListener(v -> {
-            String text = tvBody.getText().toString();
-            if (text.isEmpty()) { Toast.makeText(this, "Nothing to copy", Toast.LENGTH_SHORT).show(); return true; }
-            ClipboardManager cb = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-            cb.setPrimaryClip(ClipData.newPlainText("Note", text));
-            Toast.makeText(this, "Copied! Clears in 30s", Toast.LENGTH_SHORT).show();
-            if (clipboardClearRunnable != null) clipboardHandler.removeCallbacks(clipboardClearRunnable);
-            clipboardClearRunnable = () -> { ClipboardManager c2 = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE); if (c2 != null) c2.setPrimaryClip(ClipData.newPlainText("", "")); };
-            clipboardHandler.postDelayed(clipboardClearRunnable, CLIPBOARD_CLEAR_DELAY_MS);
-            return true;
-        });
         viewTexts[6] = tvBody;
         container.addView(tvBody);
 
@@ -1198,6 +1145,100 @@ public class DetailActivity extends BaseActivity {
         LinearLayout.LayoutParams bodyEP = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         etBody.setLayoutParams(bodyEP);
+        // ── Format TextWatcher: auto-prefix new lines based on active format ──
+        etBody.addTextChangedListener(new android.text.TextWatcher() {
+            private boolean applyingFmt = false;
+            private int     insertStart = -1;
+            private int     insertLen   = 0;
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                insertStart = start;
+                insertLen   = count;
+            }
+            @Override public void afterTextChanged(android.text.Editable e) {
+                if (applyingFmt) return;
+
+                // ── Fallback to ¶ when user deletes the prefix on the current line ──
+                // Skip this check when the change is an Enter key press — the new empty line
+                // naturally has no prefix yet, which would falsely trigger the fallback.
+                boolean isEnterKey = (insertLen == 1 && insertStart >= 0
+                        && insertStart < e.length() && e.charAt(insertStart) == '\n');
+                if (!isEnterKey && activeNoteFormat != FORMAT_PARAGRAPH) {
+                    EditText body = editViews[6];
+                    if (body != null) {
+                        int cur = body.getSelectionStart();
+                        if (cur < 0) cur = e.length();
+                        int ls = cur;
+                        while (ls > 0 && e.charAt(ls - 1) != '\n') ls--;
+                        int le = cur;
+                        while (le < e.length() && e.charAt(le) != '\n') le++;
+                        String curLine = e.subSequence(ls, le).toString();
+                        boolean prefixGone = false;
+                        switch (activeNoteFormat) {
+                            case FORMAT_BULLET:   prefixGone = !curLine.startsWith("• ");   break;
+                            case FORMAT_NUMBERED: prefixGone = !curLine.matches("\\d+\\.\\s.*"); break;
+                            case FORMAT_HEADING:  prefixGone = !curLine.startsWith("## ");  break;
+                        }
+                        if (prefixGone) {
+                            activeNoteFormat = FORMAT_PARAGRAPH;
+                            applyNoteFormatToolbarHighlight();
+                        }
+                    }
+                }
+
+                // Only act on single-char inserts that are a newline (Enter key)
+                if (insertLen != 1 || insertStart < 0 || insertStart >= e.length()) return;
+                if (e.charAt(insertStart) != '\n') return;
+
+                int newLinePos         = insertStart;    // position of '\n' just inserted
+                int cursorAfterNewline = newLinePos + 1; // new empty line starts here
+
+                // Find the previous line (ends just before the '\n')
+                int prevLineEnd   = newLinePos;
+                int prevLineStart = prevLineEnd;
+                while (prevLineStart > 0 && e.charAt(prevLineStart - 1) != '\n') prevLineStart--;
+                String prevLine = e.subSequence(prevLineStart, prevLineEnd).toString();
+
+                // Smart escape: if previous line was only the auto-prefix (no actual content),
+                // remove it and revert to paragraph — avoids getting stuck in format mode
+                boolean prevIsBulletOnly   = (activeNoteFormat == FORMAT_BULLET)   && prevLine.equals("• ");
+                boolean prevIsNumberedOnly = (activeNoteFormat == FORMAT_NUMBERED) && prevLine.matches("\\d+\\.\\s");
+                boolean prevIsHeadingOnly  = (activeNoteFormat == FORMAT_HEADING)  && prevLine.equals("## ");
+                if (prevIsBulletOnly || prevIsNumberedOnly || prevIsHeadingOnly) {
+                    applyingFmt = true;
+                    e.delete(prevLineStart, cursorAfterNewline); // remove empty prefix + '\n'
+                    activeNoteFormat = FORMAT_PARAGRAPH;
+                    applyNoteFormatToolbarHighlight();
+                    applyingFmt = false;
+                    return;
+                }
+
+                // Determine prefix for the new line
+                String prefix = "";
+                switch (activeNoteFormat) {
+                    case FORMAT_BULLET:
+                        prefix = "• ";
+                        break;
+                    case FORMAT_NUMBERED:
+                        java.util.regex.Matcher m =
+                                java.util.regex.Pattern.compile("^(\\d+)\\.\\s").matcher(prevLine);
+                        prefix = m.find() ? (Integer.parseInt(m.group(1)) + 1) + ". " : "1. ";
+                        break;
+                    case FORMAT_HEADING:
+                        // Heading is one-shot — do NOT prefix the new line, just revert to ¶
+                        activeNoteFormat = FORMAT_PARAGRAPH;
+                        applyNoteFormatToolbarHighlight();
+                        break;
+                    default:
+                        break;
+                }
+                if (!prefix.isEmpty()) {
+                    applyingFmt = true;
+                    e.insert(cursorAfterNewline, prefix);
+                    applyingFmt = false;
+                }
+            }
+        });
         etBody.setVisibility(View.GONE);
         editViews[6] = etBody;
         container.addView(etBody);
@@ -1213,6 +1254,7 @@ public class DetailActivity extends BaseActivity {
             btnDelete.setVisibility(View.GONE);
             // Use overflow ⋮ in edit mode (consistent with all other types)
             btnOverflow.setVisibility(existingEntry != null ? View.VISIBLE : View.GONE);
+            if (btnNoteFormat != null) { btnNoteFormat.setVisibility(View.VISIBLE); updateNoteFormatIcon(); }
             if (editViews[0] != null) editViews[0].setVisibility(View.VISIBLE);
             if (editViews[6] != null) editViews[6].setVisibility(View.VISIBLE);
             if (viewTexts[0] != null) viewTexts[0].setVisibility(View.GONE);
@@ -1232,6 +1274,7 @@ public class DetailActivity extends BaseActivity {
             btnDelete.setVisibility(View.VISIBLE);
             btnArchive.setVisibility(View.VISIBLE);
             btnOverflow.setVisibility(View.GONE);
+            if (btnNoteFormat != null) btnNoteFormat.setVisibility(View.GONE);
             updateArchiveButton();
             if (editViews[0] != null) editViews[0].setVisibility(View.GONE);
             if (editViews[6] != null) editViews[6].setVisibility(View.GONE);
@@ -1247,6 +1290,44 @@ public class DetailActivity extends BaseActivity {
                 }
             }
         }
+    }
+
+    /** Updates the format icon in the top bar to reflect the currently active format. */
+    private void updateNoteFormatIcon() {
+        if (btnNoteFormat == null) return;
+        btnNoteFormat.setImageResource(R.drawable.ic_format_text);
+    }
+
+    /** Delegates to updateNoteFormatIcon() — kept for TextWatcher call sites. */
+    private void applyNoteFormatToolbarHighlight() {
+        updateNoteFormatIcon();
+    }
+
+    /**
+     * Renders note body text as a SpannableStringBuilder.
+     * Lines starting with "## " are stripped of the prefix and displayed bold + 15% larger.
+     */
+    private android.text.SpannableStringBuilder renderNoteBodySpanned(String text) {
+        if (text == null || text.isEmpty()) return new android.text.SpannableStringBuilder();
+        android.text.SpannableStringBuilder sb = new android.text.SpannableStringBuilder();
+        String[] lines = text.split("\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            String line      = lines[i];
+            int    lineStart = sb.length();
+            if (line.startsWith("## ")) {
+                String heading = line.substring(3);
+                sb.append(heading);
+                int lineEnd = sb.length();
+                sb.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD),
+                        lineStart, lineEnd, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                sb.setSpan(new android.text.style.RelativeSizeSpan(1.15f),
+                        lineStart, lineEnd, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+            } else {
+                sb.append(line);
+            }
+            if (i < lines.length - 1) sb.append('\n');
+        }
+        return sb;
     }
 
     // ── Field row builder ─────────────────────────────────────────────────────
@@ -1295,7 +1376,9 @@ public class DetailActivity extends BaseActivity {
             tvView.setSingleLine(true);
         }
         viewTexts[index] = tvView;
-        row.addView(tvView);
+        if (!(EntryType.CARD.equals(entryType) && index == 2)) {
+            row.addView(tvView);
+        }
 
         // ── EDIT text ─────────────────────────────────────────────────────────
         EditText etEdit = new EditText(this);
@@ -1326,35 +1409,141 @@ public class DetailActivity extends BaseActivity {
         if (index == 0) {
             etEdit.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.AllCaps()});
         }
+        // Card number field (Card type, index 2): FrameLayout with inline card type label, visible in both modes
+        if (EntryType.CARD.equals(entryType) && index == 2) {
+            etEdit.setInputType(InputType.TYPE_CLASS_PHONE);
+            etEdit.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(23)});
+
+            // FrameLayout wraps tvView + etEdit so label overlays inside the box
+            android.widget.FrameLayout cardFrame = new android.widget.FrameLayout(this);
+            LinearLayout.LayoutParams frameParams = new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+            cardFrame.setLayoutParams(frameParams);
+
+            // tvView inside frame — full width, extra right padding for label
+            android.widget.FrameLayout.LayoutParams tvFp = new android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT);
+            tvView.setLayoutParams(tvFp);
+            tvView.setPadding(dpToPx(12), dpToPx(12), dpToPx(52), dpToPx(12));
+            cardFrame.addView(tvView);
+
+            // etEdit inside frame — full width, extra right padding for label
+            android.widget.FrameLayout.LayoutParams etFp = new android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT);
+            etEdit.setLayoutParams(etFp);
+            etEdit.setPadding(dpToPx(12), dpToPx(12), dpToPx(52), dpToPx(12));
+            cardFrame.addView(etEdit);
+
+            // Card type label — overlaid inside box at right edge
+            TextView cardTypeLabel = new TextView(this);
+            cardTypeLabel.setTextSize(11f);
+            cardTypeLabel.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            cardTypeLabel.setTextColor(0xFF9E9E9E);
+            android.widget.FrameLayout.LayoutParams labelFp = new android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.CENTER_VERTICAL | Gravity.END);
+            labelFp.rightMargin = dpToPx(10);
+            cardTypeLabel.setLayoutParams(labelFp);
+            cardTypeLabel.setVisibility(View.GONE);
+            cardFrame.addView(cardTypeLabel);
+            cardTypeLabelView = cardTypeLabel;
+
+            row.addView(cardFrame);
+
+            etEdit.addTextChangedListener(new android.text.TextWatcher() {
+                private boolean formatting = false;
+                @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+                @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+                @Override public void afterTextChanged(android.text.Editable e) {
+                    if (formatting) return;
+                    formatting = true;
+                    String formatted = formatCardNumber(e.toString());
+                    e.replace(0, e.length(), formatted);
+                    formatting = false;
+                    // Update card type label
+                    String digits = e.toString().replace(" ", "");
+                    String cardType = detectCardType(digits);
+                    if (cardType != null) {
+                        cardTypeLabel.setText(cardType);
+                        cardTypeLabel.setVisibility(View.VISIBLE);
+                    } else {
+                        cardTypeLabel.setVisibility(View.GONE);
+                    }
+                    // Adjust CVV max length based on card type (AMEX = 4, others = 3)
+                    if (editViews[4] != null) {
+                        int cvvMax = "AMEX".equals(cardType) ? 4 : 3;
+                        editViews[4].setFilters(new android.text.InputFilter[]{
+                                new android.text.InputFilter.LengthFilter(cvvMax)});
+                    }
+                }
+            });
+        }
+        // Expiry field (Card type, index 3 = field4): phone input (allows / insertion), auto-insert / after MM.
+        // Max 5 chars: MM/YY
+        if (EntryType.CARD.equals(entryType) && index == 3) {
+            etEdit.setInputType(InputType.TYPE_CLASS_PHONE);
+            etEdit.setHint("MM/YY");
+            etEdit.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(5)});
+            etEdit.addTextChangedListener(new android.text.TextWatcher() {
+                private boolean formatting = false;
+                @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+                @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+                @Override public void afterTextChanged(android.text.Editable e) {
+                    if (formatting) return;
+                    formatting = true;
+                    String digits = e.toString().replace("/", "");
+                    String formatted = digits.length() > 2
+                            ? digits.substring(0, 2) + "/" + digits.substring(2)
+                            : digits;
+                    e.replace(0, e.length(), formatted);
+                    formatting = false;
+                }
+            });
+        }
+        // CVV (index 4): numeric keypad, max 3 digits. PIN (index 5): numeric keypad.
+        if (EntryType.CARD.equals(entryType) && index == 4) {
+            etEdit.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+            etEdit.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(3)});
+        }
+        if (EntryType.CARD.equals(entryType) && index == 5) {
+            etEdit.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        }
+        // Account Number (index 2) on Bank: numeric keypad only
+        if (EntryType.BANK.equals(entryType) && index == 2) {
+            etEdit.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        }
+        // PIN / Code (index 1) on PIN entry type: numeric keypad only
+        if (EntryType.PIN.equals(entryType) && index == 1) {
+            etEdit.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        }
         etEdit.setVisibility(View.GONE);   // hidden until EDIT mode
         editViews[index] = etEdit;
-        row.addView(etEdit);
+        if (!(EntryType.CARD.equals(entryType) && index == 2)) {
+            row.addView(etEdit);
+        }
 
         // ── Secret toggle button (eye) ────────────────────────────────────────
         if (isSecret && !isNotes) {
-            // Always start closed/masked — applyModeUI() sets the correct state
-            ImageButton btnToggle = makeIconButton(R.drawable.ic_eye_off);
+            // Tap on view-mode box to reveal/hide secret value (no eye button)
             revealed[index] = false;
-            eyeButtons[index] = btnToggle;
-            btnToggle.setOnClickListener(v -> {
+            tvView.setOnClickListener(v -> {
+                if (isEditMode) return;
                 revealed[index] = !revealed[index];
-                // Swap icon: open eye when revealed, closed eye when masked
-                btnToggle.setImageResource(
-                        revealed[index] ? R.drawable.ic_eye : R.drawable.ic_eye_off);
-                if (isEditMode) {
-                    etEdit.setInputType(revealed[index]
-                            ? InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
-                            : InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-                    etEdit.setSelection(etEdit.getText().length());
-                } else {
-                    String raw = existingEntry != null
-                            ? existingEntry.getFieldByIndex(index + 1) : "";
-                    tvView.setText(revealed[index] ? raw : maskText(raw));
-                    tvView.setTextColor(getResources().getColor(
-                            raw.isEmpty() ? R.color.hint_color : R.color.input_text));
-                }
+                String raw = existingEntry != null
+                        ? existingEntry.getFieldByIndex(index + 1) : "";
+                // Card number: always display formatted with spaces when revealed
+                String display = (EntryType.CARD.equals(entryType) && index == 2)
+                        ? formatCardNumber(raw) : raw;
+                // Bank Account Number: show ●●● (N digits) when re-masked
+                String masked = (EntryType.BANK.equals(entryType) && index == 2)
+                        ? "●●● (" + raw.length() + " digits)" : maskText(raw);
+                tvView.setText(revealed[index] ? display : masked);
+                tvView.setTextColor(getResources().getColor(
+                        raw.isEmpty() ? R.color.hint_color : R.color.input_text));
             });
-            row.addView(btnToggle);
         }
 
         // ── Long-press to copy (VIEW mode only) ──────────────────────────────
@@ -1362,6 +1551,10 @@ public class DetailActivity extends BaseActivity {
         tvView.setOnLongClickListener(v -> {
             String text = existingEntry != null
                     ? existingEntry.getFieldByIndex(index + 1) : "";
+            // Card number: strip spaces before copying so clipboard gets clean digits
+            if (EntryType.CARD.equals(entryType) && index == 2) {
+                text = text.replace(" ", "");
+            }
             if (text.isEmpty()) {
                 Toast.makeText(this, "Nothing to copy", Toast.LENGTH_SHORT).show();
             } else {
@@ -1387,6 +1580,60 @@ public class DetailActivity extends BaseActivity {
     /** Sets the view-mode TextView, masking if the field is secret. */
     private void setViewText(int index, String value) {
         if (viewTexts[index] == null) return;
+        // Note body (Note type, index 6): render ## heading lines as bold spanned text
+        if (EntryType.NOTE.equals(entryType) && index == 6 && !value.isEmpty()) {
+            viewTexts[index].setText(renderNoteBodySpanned(value));
+            viewTexts[index].setTextColor(getResources().getColor(R.color.text_primary));
+            return;
+        }
+        // Card number (Card type, index 2): display formatted + update inline card type label
+        if (EntryType.CARD.equals(entryType) && index == 2) {
+            if (!value.isEmpty()) {
+                String formatted = formatCardNumber(value);
+                viewTexts[index].setText(secretFlags[index] ? maskText(formatted) : formatted);
+                viewTexts[index].setTextColor(getResources().getColor(R.color.input_text));
+            } else {
+                viewTexts[index].setText("—");
+                viewTexts[index].setTextColor(getResources().getColor(R.color.hint_color));
+            }
+            if (cardTypeLabelView != null) {
+                String digits = value.replace(" ", "");
+                String cardType = detectCardType(digits);
+                if (cardType != null) {
+                    cardTypeLabelView.setText(cardType);
+                    cardTypeLabelView.setVisibility(View.VISIBLE);
+                } else {
+                    cardTypeLabelView.setVisibility(View.GONE);
+                }
+            }
+            return;
+        }
+        // Expiry (Card type, index 3): show ⚠ Expired warning in view mode if past date
+        if (EntryType.CARD.equals(entryType) && index == 3 && !value.isEmpty()) {
+            boolean expired = false;
+            if (value.matches("^(0[1-9]|1[0-2])/[0-9]{2}$")) {
+                int month = Integer.parseInt(value.substring(0, 2));
+                int year  = 2000 + Integer.parseInt(value.substring(3));
+                java.util.Calendar now = java.util.Calendar.getInstance();
+                int curYear  = now.get(java.util.Calendar.YEAR);
+                int curMonth = now.get(java.util.Calendar.MONTH) + 1;
+                expired = (year < curYear) || (year == curYear && month < curMonth);
+            }
+            if (expired) {
+                viewTexts[index].setText(value + "  ⚠ Expired");
+                viewTexts[index].setTextColor(0xFFFF6F00); // amber warning
+            } else {
+                viewTexts[index].setText(value);
+                viewTexts[index].setTextColor(getResources().getColor(R.color.input_text));
+            }
+            return;
+        }
+        // Bank Account Number (index 2): show ●●● (N digits) when masked
+        if (EntryType.BANK.equals(entryType) && index == 2 && !value.isEmpty() && secretFlags[index]) {
+            viewTexts[index].setText("●●● (" + value.length() + " digits)");
+            viewTexts[index].setTextColor(getResources().getColor(R.color.input_text));
+            return;
+        }
         if (value.isEmpty()) {
             viewTexts[index].setText("—");
             viewTexts[index].setTextColor(getResources().getColor(R.color.hint_color));
@@ -1399,9 +1646,42 @@ public class DetailActivity extends BaseActivity {
     /** Returns ●●●●● masking string of the same length as the input. */
     private String maskText(String text) {
         if (text.isEmpty()) return "";
-        char[] mask = new char[text.length()];
-        java.util.Arrays.fill(mask, '●');
-        return new String(mask);
+        return "●●●●●";
+    }
+
+    /**
+     * Detects card network from first digits. Returns "VISA", "MASTERCARD", "AMEX",
+     * "DISCOVER", "JCB", or null if unknown.
+     */
+    private String detectCardType(String digits) {
+        if (digits.length() < 1) return null;
+        if (digits.startsWith("4"))                          return "VISA";
+        if (digits.length() >= 2) {
+            int two = Integer.parseInt(digits.substring(0, 2));
+            if (two >= 51 && two <= 55)                      return "MC";
+            if (two == 34 || two == 37)                      return "AMEX";
+            if (two == 35)                                   return "JCB";
+            if (two == 65)                                   return "DISC";
+        }
+        if (digits.length() >= 4 && digits.startsWith("6011")) return "DISC";
+        return null;
+    }
+
+    /**
+     * Formats a card number string for display: strips spaces then inserts a space
+     * after every 4 digits. E.g. "4532015112830366" → "4532 0151 1283 0366".
+     * Non-digit characters other than spaces are preserved as-is.
+     */
+    private String formatCardNumber(String raw) {
+        // Strip all existing spaces first
+        String digits = raw.replace(" ", "");
+        if (digits.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < digits.length(); i++) {
+            if (i > 0 && i % 4 == 0) sb.append(' ');
+            sb.append(digits.charAt(i));
+        }
+        return sb.toString();
     }
 
     // ── Save ──────────────────────────────────────────────────────────────────
@@ -1491,15 +1771,22 @@ public class DetailActivity extends BaseActivity {
             return;
         }
 
-        // Duplicate title check — same category only, case-insensitive
-        if (editViews[0] != null) {
-            String newTitle = editViews[0].getText().toString().trim();
-            for (Entry e : entries) {
-                if (existingEntry != null && e.getId().equals(existingEntry.getId())) continue;
-                if (!e.getType().equals(entryType)) continue;
-                if (e.getField1().equalsIgnoreCase(newTitle)) {
-                    editViews[0].setError("A record with this name already exists");
-                    editViews[0].requestFocus();
+        // Expiry validation — CARD type only
+        if (EntryType.CARD.equals(entryType) && editViews[3] != null) {
+            String expiry = editViews[3].getText().toString().trim();
+            if (!expiry.isEmpty()) {
+                boolean valid = false;
+                if (expiry.matches("^(0[1-9]|1[0-2])/[0-9]{2}$")) {
+                    int month = Integer.parseInt(expiry.substring(0, 2));
+                    int year  = 2000 + Integer.parseInt(expiry.substring(3));
+                    java.util.Calendar now = java.util.Calendar.getInstance();
+                    int curYear  = now.get(java.util.Calendar.YEAR);
+                    int curMonth = now.get(java.util.Calendar.MONTH) + 1;
+                    valid = (year > curYear) || (year == curYear && month >= curMonth);
+                }
+                if (!valid) {
+                    editViews[3].setError("Invalid or expired date");
+                    editViews[3].requestFocus();
                     return;
                 }
             }
@@ -1540,112 +1827,32 @@ public class DetailActivity extends BaseActivity {
                 newEntry.setRecordIncludeNotes(activeRecordIncludeNotes);
             }
             entries.add(newEntry);
-            existingEntry = newEntry;   // assign so attachment block below can reference it
+            existingEntry = newEntry;
         }
-
-        // v24: persist pending attachment changes
-        // Write new files via AttachmentStore, delete removed files
-        final List<Attachment> currentAttachments = existingEntry != null
-                ? new ArrayList<>(existingEntry.getAttachments()) : new ArrayList<>();
-        // Remove flagged removals from the list that will be stored
-        currentAttachments.removeIf(a -> pendingRemovals.contains(a.getId()));
-        existingEntry.setAttachments(currentAttachments);
-        // v29: persist named attachment groups (groups with files + explicitly named empty groups)
-        java.util.LinkedHashSet<String> namedGroupsSet = new java.util.LinkedHashSet<>();
-        for (Attachment a : currentAttachments) {
-            if (!a.getGroup().isEmpty()) namedGroupsSet.add(a.getGroup());
-        }
-        for (PendingAttachment pa : pendingAdds) {
-            if (pa.group != null && !pa.group.isEmpty()) namedGroupsSet.add(pa.group);
-        }
-        namedGroupsSet.addAll(pendingEmptyGroups);
-        existingEntry.setAttachmentGroups(new java.util.ArrayList<>(namedGroupsSet));
-        // Capture pending state before clearing for background thread
-        final List<PendingAttachment> toWrite = new ArrayList<>(pendingAdds);
-        final Set<String> toDelete = new HashSet<>(pendingRemovals);
-        pendingAdds.clear();
-        pendingRemovals.clear();
-        renamedOriginals.clear();
-        originalGroups.clear();
-        renamedGroups.clear();
-        expandedGroups.clear();
-        userCollapsedGroups.clear();
-        pendingEmptyGroups.clear();
-        deletedGroups.clear();
 
         final String json = storage.exportToJson(entries);
-
-        // Fast path: no attachment file I/O needed — save synchronously on the main thread
-        // and finish immediately. This matches v23 behaviour and avoids any potential
-        // memory-visibility issue with EncryptedSharedPreferences.apply() called from a
-        // background thread (main-thread reads may not see background-thread writes instantly).
-        if (toWrite.isEmpty() && toDelete.isEmpty()) {
-            if (json != null) {
-                storage.saveEntriesJson(json);
-                storage.setBackupPending(true);
-            }
-            switchToViewMode();
-            return;
+        if (json != null) {
+            storage.saveEntriesJson(json);
+            storage.setBackupPending(true);
         }
-
-        // Slow path: there are attachment files to write/delete — use a background thread
-        // for file I/O, then do the final entry save + finish on the UI thread.
-        new Thread(() -> {
-            // Write new attachment files
-            List<Attachment> written = new ArrayList<>();
-            for (PendingAttachment pa : toWrite) {
-                try {
-                    Attachment saved = attachmentStore.save(pa.bytes, pa.name, pa.mimeType);
-                    if (pa.group != null && !pa.group.isEmpty()) saved.setGroup(pa.group); // v27
-                    written.add(saved);
-                } catch (Exception e) {
-                    // If a file fails to write, skip it silently — entry still saves
-                }
-            }
-            // Delete removed files
-            for (String id : toDelete) {
-                attachmentStore.delete(id);
-            }
-            // Add newly written attachments to the entry and re-serialize
-            runOnUiThread(() -> {
-                if (!written.isEmpty()) {
-                    existingEntry.getAttachments().addAll(written);
-                }
-                final String json2 = storage.exportToJson(entries);
-                if (json2 != null) {
-                    storage.saveEntriesJson(json2);
-                    storage.setBackupPending(true);
-                }
-                switchToViewMode();
-            });
-        }).start();
+        switchToViewMode();
     }
 
-    /**
-     * Shows the share confirmation dialog.
-     * v24: For entries with multiple attachments, lists all attachment filenames.
-     */
     private void showDeleteConfirm() {
         new MaterialAlertDialogBuilder(this)
                 .setTitle("Delete Entry")
                 .setMessage("Delete \"" + existingEntry.getDisplayTitle() + "\"? This cannot be undone.")
                 .setPositiveButton("Delete", (d, w) -> {
                     entries.remove(existingEntry);
-                    final List<Attachment> attachmentsToDelete =
-                            new ArrayList<>(existingEntry.getAttachments());
                     final String json = storage.exportToJson(entries);
                     if (json != null) {
                         new Thread(() -> {
                             storage.saveEntriesJson(json);
                             storage.setBackupPending(true);
-                            attachmentStore.deleteAll(attachmentsToDelete);
                             runOnUiThread(() -> finish());
                         }).start();
                     } else {
-                        new Thread(() -> {
-                            attachmentStore.deleteAll(attachmentsToDelete);
-                            runOnUiThread(() -> finish());
-                        }).start();
+                        finish();
                     }
                 })
                 .setNegativeButton("Cancel", null)
@@ -1653,115 +1860,15 @@ public class DetailActivity extends BaseActivity {
     }
 
     private void showShareDialog() {
-        // Build effective attachment list: saved – removals + pending adds
-        List<Attachment> savedAtts = existingEntry != null
-                ? existingEntry.getAttachments() : new ArrayList<>();
-        List<Object> allFiles = new ArrayList<>();
-        for (Attachment a : savedAtts) {
-            if (!pendingRemovals.contains(a.getId())) allFiles.add(a);
-        }
-        for (PendingAttachment pa : pendingAdds) allFiles.add(pa);
-
-        // No attachments — simple text-only confirmation
-        if (allFiles.isEmpty()) {
-            new MaterialAlertDialogBuilder(this)
-                    .setTitle("Share Entry")
-                    .setMessage("This will share your data as plain text.\n\nAre you sure?")
-                    .setPositiveButton("Share", (d, w) -> shareEntry(true, new ArrayList<>()))
-                    .setNegativeButton("Cancel", null)
-                    .show();
-            return;
-        }
-
-        // Has attachments — Step 1: pick what to share
         new MaterialAlertDialogBuilder(this)
                 .setTitle("Share Entry")
-                .setAdapter(menuAdapter(new String[]{"\uD83D\uDCC4  Text only", "\uD83D\uDCCE  Attachments only", "\uD83D\uDDC2\uFE0F  Text + Attachments"}), (d, which) -> {
-                    if (which == 0) {
-                        // Text only — no file picker needed
-                        shareEntry(true, new ArrayList<>());
-                    } else {
-                        boolean includeText = (which == 2);
-                        if (allFiles.size() == 1) {
-                            // Only one file — skip picker, share directly
-                            shareEntry(includeText, allFiles);
-                        } else {
-                            // Multiple files — Step 2: pick which files
-                            showFilePickerDialog(includeText, allFiles);
-                        }
-                    }
-                })
+                .setMessage("This will share your data as plain text.\n\nAre you sure?")
+                .setPositiveButton("Share", (d, w) -> shareEntry())
+                .setNegativeButton("Cancel", null)
                 .show();
     }
 
-    /** Step 2 of share flow — lets user pick which files to include, then shares. */
-    private void showFilePickerDialog(boolean includeText, List<Object> allFiles) {
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        int ph = dpToPx(24);
-        int pv = dpToPx(16);
-        layout.setPadding(ph, pv, ph, dpToPx(8));
-
-        TextView tvHint = new TextView(this);
-        tvHint.setText("Select files to include:");
-        tvHint.setTextSize(14f);
-        tvHint.setTextColor(getResources().getColor(R.color.text_primary, getTheme()));
-        layout.addView(tvHint);
-
-        View spacer = new View(this);
-        spacer.setLayoutParams(new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(10)));
-        layout.addView(spacer);
-
-        List<CheckBox> checkBoxes = new ArrayList<>();
-        for (Object file : allFiles) {
-            String fname = file instanceof Attachment
-                    ? ((Attachment) file).getName()
-                    : ((PendingAttachment) file).name + "  (unsaved)";
-            CheckBox chk = new CheckBox(this);
-            chk.setText(fname);
-            chk.setChecked(true);
-            chk.setTextSize(13f);
-            chk.setTextColor(getResources().getColor(R.color.text_primary, getTheme()));
-            chk.setButtonTintList(android.content.res.ColorStateList.valueOf(
-                    getResources().getColor(R.color.text_primary, getTheme())));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT);
-            lp.topMargin = dpToPx(4);
-            chk.setLayoutParams(lp);
-            layout.addView(chk);
-            checkBoxes.add(chk);
-        }
-
-        AlertDialog dlg = new MaterialAlertDialogBuilder(this)
-                .setTitle(includeText ? "Text + Attachments" : "Attachments only")
-                .setView(layout)
-                .setPositiveButton("Share", null)
-                .create();
-        dlg.show();
-        dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            List<Object> selected = new ArrayList<>();
-            for (int i = 0; i < checkBoxes.size(); i++) {
-                if (checkBoxes.get(i).isChecked()) selected.add(allFiles.get(i));
-            }
-            if (selected.isEmpty()) {
-                Toast.makeText(this, "Select at least one file.", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            dlg.dismiss();
-            shareEntry(includeText, selected);
-        });
-    }
-
-    /**
-     * Performs the actual share.
-     *
-     * @param includeText   true = include entry text (.txt); false = attachments only
-     * @param selectedFiles files to attach; empty = text-only share
-     */
-    private void shareEntry(boolean includeText, List<Object> selectedFiles) {
-        // Build the entry text string (used when includeText=true)
+    private void shareEntry() {
         final String shareText;
         if (EntryType.CHECKLIST.equals(entryType) && existingEntry != null) {
             StringBuilder sb = new StringBuilder();
@@ -1798,113 +1905,7 @@ public class DetailActivity extends BaseActivity {
             shareText = sb.toString();
         }
 
-        // Text-only share — no files
-        if (selectedFiles == null || selectedFiles.isEmpty()) {
-            startActivity(Intent.createChooser(
-                    buildTextOnlyShareIntent(shareText), "Share via"));
-            return;
-        }
-
-        // Has files — read on background thread
-        final boolean finalIncludeText = includeText;
-        final String entryId = (existingEntry != null && existingEntry.getId() != null)
-                ? existingEntry.getId() : "pending";
-        final String entryTitle = existingEntry != null ? existingEntry.getDisplayTitle() : "";
-        final List<Object> filesToShare = new ArrayList<>(selectedFiles);
-
-        ProgressBar pb = new ProgressBar(this);
-        pb.setIndeterminate(true);
-        int pad = Math.round(24 * getResources().getDisplayMetrics().density);
-        pb.setPadding(pad, pad, pad, pad);
-        AlertDialog progress = new MaterialAlertDialogBuilder(this)
-                .setTitle("Preparing share…")
-                .setView(pb)
-                .setCancelable(false)
-                .create();
-        progress.show();
-
-        new Thread(() -> {
-            try {
-                File cacheDir = new File(getCacheDir(), "attachments/" + entryId);
-                //noinspection ResultOfMethodCallIgnored
-                cacheDir.mkdirs();
-
-                java.util.ArrayList<Uri> uris = new java.util.ArrayList<>();
-
-                // Text file — only when includeText = true
-                if (finalIncludeText) {
-                    String txtFileName = entryTitle.replaceAll("[^a-zA-Z0-9_\\-]", "_");
-                    if (txtFileName.isEmpty()) txtFileName = "entry";
-                    File txtFile = new File(cacheDir, txtFileName + ".txt");
-                    try (FileOutputStream fos = new FileOutputStream(txtFile)) {
-                        fos.write(shareText.getBytes("UTF-8"));
-                    }
-                    uris.add(FileProvider.getUriForFile(DetailActivity.this,
-                            getPackageName() + ".fileprovider", txtFile));
-                }
-
-                // Selected attachment files
-                for (Object file : filesToShare) {
-                    try {
-                        if (file instanceof Attachment) {
-                            Attachment a = (Attachment) file;
-                            byte[] bytes = attachmentStore.read(a.getId());
-                            File attFile = new File(cacheDir, a.getName());
-                            try (FileOutputStream fos = new FileOutputStream(attFile)) { fos.write(bytes); }
-                            uris.add(FileProvider.getUriForFile(DetailActivity.this,
-                                    getPackageName() + ".fileprovider", attFile));
-                        } else if (file instanceof PendingAttachment) {
-                            PendingAttachment pa = (PendingAttachment) file;
-                            File attFile = new File(cacheDir, pa.name);
-                            try (FileOutputStream fos = new FileOutputStream(attFile)) { fos.write(pa.bytes); }
-                            uris.add(FileProvider.getUriForFile(DetailActivity.this,
-                                    getPackageName() + ".fileprovider", attFile));
-                        }
-                    } catch (Exception ignored) { /* skip unreadable file */ }
-                }
-
-                if (uris.isEmpty()) {
-                    // All files failed to read — fall back to text
-                    runOnUiThread(() -> {
-                        progress.dismiss();
-                        startActivity(Intent.createChooser(
-                                buildTextOnlyShareIntent(shareText), "Share via"));
-                    });
-                    return;
-                }
-
-                Intent shareIntent = uris.size() == 1
-                        ? new Intent(Intent.ACTION_SEND)
-                        : new Intent(Intent.ACTION_SEND_MULTIPLE);
-                shareIntent.setType("*/*");
-                shareIntent.putExtra(Intent.EXTRA_SUBJECT, entryTitle);
-                if (uris.size() == 1) {
-                    shareIntent.putExtra(Intent.EXTRA_STREAM, uris.get(0));
-                } else {
-                    shareIntent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
-                }
-                ClipData clip = ClipData.newRawUri("", uris.get(0));
-                for (int i = 1; i < uris.size(); i++) clip.addItem(new ClipData.Item(uris.get(i)));
-                shareIntent.setClipData(clip);
-                shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                Intent chooser = Intent.createChooser(shareIntent, "Share via");
-                chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-
-                runOnUiThread(() -> {
-                    progress.dismiss();
-                    startActivity(chooser);
-                });
-
-            } catch (Exception e) {
-                runOnUiThread(() -> {
-                    progress.dismiss();
-                    Toast.makeText(DetailActivity.this,
-                            "Could not attach file — sharing text only.", Toast.LENGTH_SHORT).show();
-                    startActivity(Intent.createChooser(
-                            buildTextOnlyShareIntent(shareText), "Share via"));
-                });
-            }
-        }).start();
+        startActivity(Intent.createChooser(buildTextOnlyShareIntent(shareText), "Share via"));
     }
 
     /** Builds a plain-text only share intent. */
@@ -1922,6 +1923,8 @@ public class DetailActivity extends BaseActivity {
     private ImageButton makeIconButton(int drawableRes) {
         ImageButton btn = new ImageButton(this);
         btn.setImageResource(drawableRes);
+        btn.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+        btn.setPadding(dpToPx(10), dpToPx(10), dpToPx(10), dpToPx(10));
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(dpToPx(44), dpToPx(44));
         p.leftMargin = dpToPx(4);
         btn.setLayoutParams(p);
@@ -1959,1232 +1962,6 @@ public class DetailActivity extends BaseActivity {
         };
     }
 
-    // ── v24: Attachment section ───────────────────────────────────────────────
-
-    /** Initial setup of attachment section — binds container and Add button. */
-    private void setupAttachmentSection() {
-        // v20: checklist has no attachment section
-        if (EntryType.CHECKLIST.equals(entryType)) return;
-
-        attachmentListContainer = findViewById(R.id.attachmentListContainer);
-        btnAddAttachment        = findViewById(R.id.btnAddAttachment);
-
-        // Insert a persistent search container immediately before attachmentListContainer.
-        // It is NEVER cleared — so the EditText inside it stays attached to the window
-        // and the keyboard never dismisses while the user is typing.
-        android.view.ViewGroup attachmentParent = (android.view.ViewGroup) attachmentListContainer.getParent();
-        int attachmentIndex = attachmentParent.indexOfChild(attachmentListContainer);
-        attachmentSearchContainer = new LinearLayout(this);
-        attachmentSearchContainer.setOrientation(LinearLayout.VERTICAL);
-        attachmentSearchContainer.setVisibility(View.GONE);
-        attachmentParent.addView(attachmentSearchContainer, attachmentIndex);
-        // attachmentListContainer is now at attachmentIndex+1
-
-        // v29: restore saved attachment groups into pendingEmptyGroups so they appear in edit mode.
-        // Groups that already have files are not added (they'll be rendered from the file's group field).
-        if (existingEntry != null) {
-            java.util.Set<String> groupsWithFiles = new java.util.HashSet<>();
-            for (Attachment a : existingEntry.getAttachments()) {
-                if (!a.getGroup().isEmpty()) groupsWithFiles.add(a.getGroup());
-            }
-            for (String g : existingEntry.getAttachmentGroups()) {
-                if (!groupsWithFiles.contains(g)) pendingEmptyGroups.add(g);
-            }
-        }
-
-        btnAddAttachment.setOnClickListener(v -> {
-            int currentCount = (existingEntry != null ? existingEntry.getAttachments().size() : 0)
-                    - pendingRemovals.size() + pendingAdds.size();
-            int slotsLeft = MAX_ATTACHMENT_COUNT - currentCount;
-            if (slotsLeft <= 0) {
-                Toast.makeText(this,
-                        "Maximum " + MAX_ATTACHMENT_COUNT + " attachments per entry.",
-                        Toast.LENGTH_SHORT).show();
-                return;
-            }
-            // Build list of existing group names for picker
-            java.util.LinkedHashSet<String> groupSet = new java.util.LinkedHashSet<>();
-            if (existingEntry != null) {
-                for (Attachment a : existingEntry.getAttachments()) {
-                    if (!pendingRemovals.contains(a.getId()) && !a.getGroup().isEmpty())
-                        groupSet.add(a.getGroup());
-                }
-            }
-            for (PendingAttachment pa : pendingAdds) {
-                if (!pa.group.isEmpty()) groupSet.add(pa.group);
-            }
-            // Apply any in-session group renames to the displayed names
-            java.util.List<String> existingGroups = new java.util.ArrayList<>();
-            for (String g : groupSet) {
-                String resolved = g;
-                for (java.util.Map.Entry<String, String> rename : renamedGroups.entrySet()) {
-                    if (rename.getKey().equals(g)) { resolved = rename.getValue(); break; }
-                }
-                if (!existingGroups.contains(resolved)) existingGroups.add(resolved);
-            }
-
-            showAddAttachmentDialog(slotsLeft, existingGroups);
-        });
-
-        renderAttachmentList();
-    }
-
-    /**
-     * Shows a simple two-option picker: Attach file (no group) or New Group.
-     */
-    private void showAddAttachmentDialog(int slotsLeft, java.util.List<String> existingGroups) {
-        String slotHint = slotsLeft == 1 ? "  (1 slot remaining)" : "  (up to " + slotsLeft + " files)";
-        new MaterialAlertDialogBuilder(this)
-                .setTitle("Add" + slotHint)
-                .setAdapter(menuAdapter(new String[]{"\uD83D\uDCCE  Attach file", "\uD83D\uDCC1  New Group"}), (d, which) -> {
-                    if (which == 0) {
-                        // Attach file — no group
-                        launchPickerForGroup(slotsLeft, "");
-                    } else {
-                        // New Group — prompt for name, then create empty group header
-                        android.widget.EditText etGroupName = new android.widget.EditText(this);
-                        etGroupName.setHint("Group name (e.g. Payslips)");
-                        etGroupName.setSingleLine(true);
-                        etGroupName.setInputType(android.text.InputType.TYPE_CLASS_TEXT
-                                | android.text.InputType.TYPE_TEXT_FLAG_CAP_WORDS);
-                        int pad = dpToPx(16);
-                        etGroupName.setPadding(pad, pad, pad, pad);
-                        AlertDialog nameDialog = new MaterialAlertDialogBuilder(this)
-                                .setTitle("New Group")
-                                .setView(etGroupName)
-                                .setPositiveButton("Create", null)
-                                .setNegativeButton("Cancel", null)
-                                .create();
-                        nameDialog.show();
-                        nameDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v2 -> {
-                            String groupName = etGroupName.getText().toString().trim();
-                            if (groupName.isEmpty()) { etGroupName.setError("Required"); return; }
-                            // Prevent duplicate group names
-                            if (existingGroups.contains(groupName) || pendingEmptyGroups.contains(groupName)) {
-                                etGroupName.setError("Group already exists");
-                                return;
-                            }
-                            nameDialog.dismiss();
-                            // Add as empty group — user taps [+] on the header to add files
-                            pendingEmptyGroups.add(groupName);
-                            renderAttachmentList();
-                        });
-                        etGroupName.post(() -> {
-                            etGroupName.requestFocus();
-                            android.view.inputmethod.InputMethodManager imm =
-                                    (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-                            if (imm != null) imm.showSoftInput(etGroupName,
-                                    android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
-                        });
-                    }
-                })
-                .show();
-    }
-
-    /** Stores the target group for the pending pick, then launches camera or file picker. */
-    private String pendingPickGroup = ""; // group to assign to files from the next pick session
-
-    private void launchPickerForGroup(int slotsLeft, String group) {
-        pendingPickGroup = group;
-        String slotHint = slotsLeft == 1 ? "  (1 slot remaining)" : "  (up to " + slotsLeft + " files)";
-        new MaterialAlertDialogBuilder(this)
-                .setTitle("Add files" + slotHint)
-                .setAdapter(menuAdapter(new String[]{"\uD83D\uDCF7  Camera", "\uD83D\uDCC1  From files"}), (d, which) -> {
-                    if (which == 0) {
-                        launchCamera();
-                    } else if (slotsLeft == 1) {
-                        singleFilePicker.launch(new String[]{"*/*"});
-                    } else {
-                        attachmentPicker.launch(new String[]{"*/*"});
-                    }
-                })
-                .show();
-    }
-
-    /**
-     * Rebuilds the attachment list UI from current state — grouped rendering.
-     *
-     * 1 file   → single row with paperclip icon, no master header.
-     * 2+ files → master "📎 Attachments (N)" collapse/expand row.
-     *            VIEW mode: starts collapsed. EDIT mode: starts expanded.
-     *            Named groups → folder header rows (indented files inside).
-     *            Ungrouped files → flat rows at normal indent.
-     */
-    private void renderAttachmentList() {
-        if (attachmentListContainer == null) return;
-        attachmentListContainer.removeAllViews();
-
-        android.view.ViewGroup.MarginLayoutParams lp =
-                (android.view.ViewGroup.MarginLayoutParams) attachmentListContainer.getLayoutParams();
-        if (lp != null) lp.topMargin = dpToPx(isEditMode ? 0 : 8);
-        attachmentListContainer.setLayoutParams(lp);
-
-        // Build list of visible saved attachments
-        java.util.List<Attachment> savedList = new java.util.ArrayList<>();
-        if (existingEntry != null) {
-            for (Attachment att : existingEntry.getAttachments()) {
-                if (!pendingRemovals.contains(att.getId())) savedList.add(att);
-            }
-        }
-        int totalCount = savedList.size() + pendingAdds.size();
-
-        // Add button — edit mode only
-        if (btnAddAttachment != null) {
-            btnAddAttachment.setVisibility(isEditMode ? android.view.View.VISIBLE : android.view.View.GONE);
-        }
-
-        if (totalCount == 0 && pendingEmptyGroups.isEmpty()) return;
-
-        // Single file with no empty groups — show directly with icon, no master header
-        if (totalCount == 1 && pendingEmptyGroups.isEmpty()) {
-            // Build groups just to find the one item
-            java.util.LinkedHashMap<String, java.util.List<Object>> singleGroups = new java.util.LinkedHashMap<>();
-            for (Attachment att : savedList) {
-                String g = att.getGroup();
-                String resolved = g;
-                for (java.util.Map.Entry<String, String> e2 : renamedGroups.entrySet()) {
-                    if (e2.getKey().equals(g)) { resolved = e2.getValue(); break; }
-                }
-                if (!singleGroups.containsKey(resolved)) singleGroups.put(resolved, new java.util.ArrayList<>());
-                singleGroups.get(resolved).add(att);
-            }
-            for (PendingAttachment pa : pendingAdds) {
-                String g = pa.group != null ? pa.group : "";
-                if (!singleGroups.containsKey(g)) singleGroups.put(g, new java.util.ArrayList<>());
-                singleGroups.get(g).add(pa);
-            }
-            for (java.util.List<Object> items : singleGroups.values()) {
-                for (Object item : items) {
-                    if (item instanceof Attachment) addSavedAttachRow((Attachment) item, "", true);
-                    else addPendingAttachRow((PendingAttachment) item, true);
-                }
-            }
-            return;
-        }
-
-        // ── 2+ files — build grouped structure ───────────────────────────────
-        java.util.LinkedHashMap<String, java.util.List<Object>> groups = new java.util.LinkedHashMap<>();
-        for (Attachment att : savedList) {
-            String g = att.getGroup();
-            String resolved = g;
-            for (java.util.Map.Entry<String, String> e2 : renamedGroups.entrySet()) {
-                if (e2.getKey().equals(g)) { resolved = e2.getValue(); break; }
-            }
-            if (!groups.containsKey(resolved)) groups.put(resolved, new java.util.ArrayList<>());
-            groups.get(resolved).add(att);
-        }
-        for (PendingAttachment pa : pendingAdds) {
-            String g = pa.group != null ? pa.group : "";
-            if (!groups.containsKey(g)) groups.put(g, new java.util.ArrayList<>());
-            groups.get(g).add(pa);
-        }
-
-        java.util.List<String> namedGroupKeys = new java.util.ArrayList<>();
-        for (String k : groups.keySet()) { if (!k.isEmpty()) namedGroupKeys.add(k); }
-        // Include pending empty groups (created this session, no files yet)
-        for (String eg : pendingEmptyGroups) {
-            if (!namedGroupKeys.contains(eg)) namedGroupKeys.add(eg);
-            if (!groups.containsKey(eg)) groups.put(eg, new java.util.ArrayList<>());
-        }
-        boolean hasUngrouped = groups.containsKey("");
-
-        // Edit mode: default expand master + all groups (unless user explicitly collapsed)
-        if (isEditMode && !userCollapsedGroups.contains("__master__")) {
-            attachmentsExpanded = true;
-        }
-        if (isEditMode) {
-            for (String k : namedGroupKeys) {
-                if (!userCollapsedGroups.contains(k)) expandedGroups.add(k);
-            }
-        }
-
-        // ── Master "Attachments (N)" row ──────────────────────────────────────
-        addMasterAttachmentsRow(totalCount, attachmentsExpanded);
-
-        // ── Search bar (VIEW mode, ≥6 files) — lives in attachmentSearchContainer ──
-        // The container is separate from attachmentListContainer so removeAllViews()
-        // never destroys the EditText and the keyboard stays open while typing.
-        if (!isEditMode && totalCount >= 6) {
-            if (attachmentSearchVisible) {
-                attachmentSearchContainer.setVisibility(View.VISIBLE);
-                if (attachmentSearchEt == null) buildAttachmentSearchBar();
-            } else {
-                attachmentSearchContainer.setVisibility(View.GONE);
-            }
-        } else {
-            attachmentSearchContainer.setVisibility(View.GONE);
-        }
-
-        // Bug fix: search is independent of collapse state.
-        // Only skip file rows if collapsed AND search is not active.
-        if (!attachmentsExpanded && !attachmentSearchVisible) return;
-
-        // Active filter — only apply when there is actual typed text.
-        // Empty query = no filter (don't show all files just because bar is open).
-        String filterQ = (!isEditMode && attachmentSearchVisible && !attachmentSearchQuery.trim().isEmpty())
-                ? attachmentSearchQuery.trim().toLowerCase()
-                : "";
-        boolean filtering = !filterQ.isEmpty();
-
-        // When search bar is open but nothing typed yet — show nothing in file list
-        if (attachmentSearchVisible && !filtering) return;
-
-        boolean anyVisible = false;
-
-        // ── Render named groups (indented under master) ──────────────────────
-        for (String groupKey : namedGroupKeys) {
-            java.util.List<Object> allItems = groups.get(groupKey);
-            // Apply filter: keep items whose filename contains the query
-            java.util.List<Object> items = new java.util.ArrayList<>();
-            if (filtering) {
-                for (Object item : allItems) {
-                    String fname = (item instanceof Attachment)
-                            ? ((Attachment) item).getName()
-                            : ((PendingAttachment) item).name;
-                    if (fname.toLowerCase().contains(filterQ)) items.add(item);
-                }
-            } else {
-                items.addAll(allItems);
-            }
-            // When filtering: hide groups with no matches.
-            // In VIEW mode (not filtering): hide groups with no files (empty groups are edit-only).
-            // In EDIT mode (not filtering): always show, even if 0 files (user can add to them).
-            if (items.isEmpty() && (filtering || !isEditMode)) continue;
-            anyVisible = true;
-            boolean isExpanded = filtering || expandedGroups.contains(groupKey); // auto-expand when filtering
-            addGroupHeaderRow(groupKey, items.size(), isExpanded, true);
-            if (isExpanded) {
-                for (Object item : items) {
-                    if (item instanceof Attachment)
-                        addSavedAttachRow((Attachment) item, groupKey, false, true, true);
-                    else
-                        addPendingAttachRow((PendingAttachment) item, false, true, true);
-                }
-            }
-        }
-
-        // ── Render ungrouped files (indented under master) ────────────────────
-        if (hasUngrouped) {
-            java.util.List<Object> allItems = groups.get("");
-            java.util.List<Object> items = new java.util.ArrayList<>();
-            if (filtering) {
-                for (Object item : allItems) {
-                    String fname = (item instanceof Attachment)
-                            ? ((Attachment) item).getName()
-                            : ((PendingAttachment) item).name;
-                    if (fname.toLowerCase().contains(filterQ)) items.add(item);
-                }
-            } else {
-                items.addAll(allItems);
-            }
-            for (Object item : items) {
-                anyVisible = true;
-                if (item instanceof Attachment) addSavedAttachRow((Attachment) item, "", false, true, false);
-                else addPendingAttachRow((PendingAttachment) item, false, true, false);
-            }
-        }
-
-        // ── No-results message when filter matches nothing ─────────────────────
-        if (filtering && !anyVisible) {
-            float d = getResources().getDisplayMetrics().density;
-            TextView tvEmpty = new TextView(this);
-            tvEmpty.setText("No attachments match");
-            tvEmpty.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13);
-            tvEmpty.setTextColor(0xFF9E9E9E);
-            tvEmpty.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
-            LinearLayout.LayoutParams emptyLp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            emptyLp.topMargin = Math.round(8 * d);
-            emptyLp.bottomMargin = Math.round(8 * d);
-            tvEmpty.setLayoutParams(emptyLp);
-            attachmentListContainer.addView(tvEmpty);
-        }
-    }
-
-    /** Builds the search EditText inside attachmentSearchContainer (called once per search session). */
-    private void buildAttachmentSearchBar() {
-        attachmentSearchContainer.removeAllViews();
-        float d = getResources().getDisplayMetrics().density;
-        int pad = Math.round(8 * d);
-        int sz  = Math.round(18 * d);
-        int gap = Math.round(6 * d);
-
-        LinearLayout bar = new LinearLayout(this);
-        bar.setOrientation(LinearLayout.HORIZONTAL);
-        bar.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        bar.setPadding(pad, pad / 2, pad, pad / 2);
-        bar.setLayoutParams(new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        attachmentSearchEt = new android.widget.EditText(this);
-        attachmentSearchEt.setHint("Search attachments…");
-        attachmentSearchEt.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13);
-        attachmentSearchEt.setTextColor(getResources().getColor(R.color.text_primary, getTheme()));
-        attachmentSearchEt.setHintTextColor(0xFF9E9E9E);
-        attachmentSearchEt.setBackground(null);
-        attachmentSearchEt.setSingleLine(true);
-        attachmentSearchEt.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
-        attachmentSearchEt.setLayoutParams(new LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        bar.addView(attachmentSearchEt);
-
-        ImageView btnClear = new ImageView(this);
-        btnClear.setImageResource(R.drawable.ic_close);
-        btnClear.setColorFilter(0xFF9E9E9E);
-        btnClear.setVisibility(View.GONE);
-        LinearLayout.LayoutParams clLp = new LinearLayout.LayoutParams(sz, sz);
-        clLp.setMarginStart(gap);
-        btnClear.setLayoutParams(clLp);
-        btnClear.setClickable(true);
-        btnClear.setFocusable(true);
-        btnClear.setOnClickListener(v -> {
-            attachmentSearchQuery = "";
-            attachmentSearchEt.setText("");
-            btnClear.setVisibility(View.GONE);
-            // Only rebuild file rows — EditText stays in attachmentSearchContainer untouched
-            renderAttachmentList();
-            attachmentSearchEt.requestFocus();
-        });
-        bar.addView(btnClear);
-
-        attachmentSearchEt.addTextChangedListener(new android.text.TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
-            @Override public void onTextChanged(CharSequence s, int st, int b, int c) {}
-            @Override public void afterTextChanged(android.text.Editable s) {
-                attachmentSearchQuery = s.toString();
-                btnClear.setVisibility(attachmentSearchQuery.isEmpty() ? View.GONE : View.VISIBLE);
-                // Only clears and rebuilds attachmentListContainer (file rows).
-                // attachmentSearchContainer (this EditText) is never touched — keyboard stays open.
-                renderAttachmentList();
-            }
-        });
-
-        attachmentSearchContainer.addView(bar);
-
-        // Open keyboard on first appearance
-        attachmentSearchEt.post(() -> {
-            attachmentSearchEt.requestFocus();
-            android.view.inputmethod.InputMethodManager imm =
-                    (android.view.inputmethod.InputMethodManager)
-                            getSystemService(android.content.Context.INPUT_METHOD_SERVICE);
-            if (imm != null) imm.showSoftInput(attachmentSearchEt,
-                    android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
-        });
-    }
-
-    /** Master collapse/expand row: "📎  Attachments (N)  ›/▼" */
-    private void addMasterAttachmentsRow(int count, boolean isExpanded) {
-        float d = getResources().getDisplayMetrics().density;
-        int pad = Math.round(10 * d);
-        int sz  = Math.round(20 * d);
-        int gap = Math.round(8 * d);
-        int mb  = Math.round(4 * d);
-
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        row.setBackground(null);
-        row.setClickable(true);
-        row.setFocusable(true);
-        row.setPadding(pad, pad, pad, pad);
-        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        rowLp.bottomMargin = mb;
-        row.setLayoutParams(rowLp);
-
-        // Paperclip icon
-        ImageView icon = new ImageView(this);
-        icon.setImageResource(R.drawable.ic_attachment);
-        icon.setColorFilter(0xFF757575);
-        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(sz, sz);
-        iconLp.setMarginEnd(gap);
-        icon.setLayoutParams(iconLp);
-        row.addView(icon);
-
-        // "Attachments (N)" label
-        TextView tvLabel = new TextView(this);
-        tvLabel.setText("Attachments  (" + count + ")");
-        tvLabel.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14);
-        tvLabel.setTextColor(getResources().getColor(R.color.text_primary, getTheme()));
-        tvLabel.setTypeface(tvLabel.getTypeface(), android.graphics.Typeface.BOLD);
-        tvLabel.setLayoutParams(new LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        row.addView(tvLabel);
-
-        // Search icon — reserved for future version (blocked v28)
-
-        // Chevron
-        ImageView chevron = new ImageView(this);
-        chevron.setImageResource(R.drawable.ic_chevron_right);
-        chevron.setRotation(isExpanded ? 90f : 0f);
-        chevron.setColorFilter(0xFF757575);
-        LinearLayout.LayoutParams chLp = new LinearLayout.LayoutParams(sz, sz);
-        chLp.setMarginStart(gap);
-        chevron.setLayoutParams(chLp);
-        row.addView(chevron);
-
-        row.setOnClickListener(v -> {
-            attachmentsExpanded = !attachmentsExpanded;
-            if (isEditMode) {
-                // Track master collapse so edit mode doesn't force re-expand
-                if (attachmentsExpanded) userCollapsedGroups.remove("__master__");
-                else userCollapsedGroups.add("__master__");
-            }
-            renderAttachmentList();
-        });
-
-        attachmentListContainer.addView(row);
-    }
-
-    /** Groups the user has explicitly expanded (view mode: tap to expand; edit mode: expanded by default). */
-    private final java.util.Set<String> expandedGroups = new java.util.HashSet<>();
-    /** Groups the user has explicitly collapsed while in edit mode. */
-    private final java.util.Set<String> userCollapsedGroups = new java.util.HashSet<>();
-    /** Whether the attachment search bar is currently visible (VIEW mode only). */
-    private boolean attachmentSearchVisible = false;
-    /** Current attachment search query (VIEW mode only). */
-    private String attachmentSearchQuery = "";
-    /** Persisted EditText for attachment search — kept alive across re-renders to preserve keyboard focus. */
-    private android.widget.EditText attachmentSearchEt = null;
-
-    // ── Attachment row/header builders ────────────────────────────────────────
-
-    private void addGroupHeaderRow(String groupName, int count, boolean isExpanded) {
-        addGroupHeaderRow(groupName, count, isExpanded, false);
-    }
-
-    private void addGroupHeaderRow(String groupName, int count, boolean isExpanded, boolean indent) {
-        float d = getResources().getDisplayMetrics().density;
-        int pad = Math.round(10 * d);
-        int sz  = Math.round(20 * d);
-        int gap = Math.round(8 * d);
-        int mb  = Math.round(4 * d);
-
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        row.setBackground(null);
-        row.setClickable(true);
-        row.setFocusable(true);
-        row.setPadding(pad, pad, pad, pad);
-        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        rowLp.bottomMargin = mb;
-        if (indent) rowLp.setMarginStart(dpToPx(16));
-        row.setLayoutParams(rowLp);
-
-        // Folder icon on group header
-        ImageView icon = new ImageView(this);
-        icon.setImageResource(R.drawable.ic_folder);
-        icon.setColorFilter(0xFF757575);
-        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(sz, sz);
-        iconLp.setMarginEnd(gap);
-        icon.setLayoutParams(iconLp);
-        row.addView(icon);
-
-        // Group name + count label
-        TextView tvName = new TextView(this);
-        tvName.setText(groupName + "  (" + count + ")");
-        tvName.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14);
-        tvName.setTextColor(getResources().getColor(R.color.text_primary, getTheme()));
-        tvName.setTypeface(tvName.getTypeface(), android.graphics.Typeface.BOLD);
-        tvName.setLayoutParams(new LinearLayout.LayoutParams(0,
-                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        row.addView(tvName);
-
-        // Edit mode: only [+] add button as inline icon; rename/delete via long-press
-        if (isEditMode) {
-            ImageButton btnAdd = new ImageButton(this);
-            btnAdd.setImageResource(R.drawable.ic_add);
-            btnAdd.setBackground(null);
-            btnAdd.setColorFilter(getResources().getColor(R.color.text_primary, getTheme()));
-            btnAdd.setContentDescription("Add files to " + groupName);
-            LinearLayout.LayoutParams addLp = new LinearLayout.LayoutParams(sz, sz);
-            addLp.setMarginStart(gap);
-            btnAdd.setLayoutParams(addLp);
-            btnAdd.setOnClickListener(v -> {
-                int currentCount = (existingEntry != null ? existingEntry.getAttachments().size() : 0)
-                        - pendingRemovals.size() + pendingAdds.size();
-                int slotsLeft = MAX_ATTACHMENT_COUNT - currentCount;
-                if (slotsLeft <= 0) {
-                    Toast.makeText(this, "Maximum " + MAX_ATTACHMENT_COUNT + " attachments per entry.",
-                            Toast.LENGTH_SHORT).show();
-                    return;
-                }
-                launchPickerForGroup(slotsLeft, groupName);
-            });
-            row.addView(btnAdd);
-        }
-
-        // Chevron — rotated when expanded
-        ImageView chevron = new ImageView(this);
-        chevron.setImageResource(R.drawable.ic_chevron_right);
-        chevron.setRotation(isExpanded ? 90f : 0f);
-        chevron.setColorFilter(0xFF757575);
-        LinearLayout.LayoutParams chLp = new LinearLayout.LayoutParams(sz, sz);
-        chLp.setMarginStart(gap);
-        chevron.setLayoutParams(chLp);
-        row.addView(chevron);
-
-        // Single tap: expand / collapse
-        row.setOnClickListener(v -> {
-            if (isEditMode) {
-                if (expandedGroups.contains(groupName)) {
-                    expandedGroups.remove(groupName);
-                    userCollapsedGroups.add(groupName);
-                } else {
-                    expandedGroups.add(groupName);
-                    userCollapsedGroups.remove(groupName);
-                }
-            } else {
-                if (expandedGroups.contains(groupName)) expandedGroups.remove(groupName);
-                else expandedGroups.add(groupName);
-            }
-            renderAttachmentList();
-        });
-
-        // Long press (edit mode only): Rename / Delete Group
-        if (isEditMode) {
-            row.setOnLongClickListener(v -> {
-                new MaterialAlertDialogBuilder(DetailActivity.this)
-                        .setTitle(groupName)
-                        .setAdapter(menuAdapter(new String[]{"\u270F\uFE0F  Rename", "\uD83D\uDDD1\uFE0F  Delete Group"}), (dlg, which) -> {
-                            if (which == 0) {
-                                showRenameGroupDialog(groupName);
-                            } else {
-                                new MaterialAlertDialogBuilder(this)
-                                        .setTitle("Delete Group")
-                                        .setMessage("Delete \"" + groupName + "\" and all its files?\n\nFiles will be permanently removed when you save.")
-                                        .setPositiveButton("Delete", (d2, w2) -> deleteGroup(groupName))
-                                        .setNegativeButton("Cancel", null)
-                                        .show();
-                            }
-                        })
-                        .show();
-                return true;
-            });
-        }
-
-        attachmentListContainer.addView(row);
-    }
-
-    /**
-     * After individually removing the last file from a named group, preserve the group
-     * header in edit mode by adding it to pendingEmptyGroups.
-     * This ensures the group only disappears via explicit "Delete Group", not via file deletion.
-     */
-    private void preserveGroupIfNowEmpty(String resolvedGroupName) {
-        if (resolvedGroupName == null || resolvedGroupName.isEmpty()) return;
-        // Check remaining saved files in this group (excluding already-flagged removals)
-        if (existingEntry != null) {
-            for (Attachment a : existingEntry.getAttachments()) {
-                if (pendingRemovals.contains(a.getId())) continue;
-                String resolved = a.getGroup();
-                for (java.util.Map.Entry<String, String> e2 : renamedGroups.entrySet()) {
-                    if (e2.getKey().equals(a.getGroup())) { resolved = e2.getValue(); break; }
-                }
-                if (resolved.equals(resolvedGroupName)) return; // still has files
-            }
-        }
-        // Check remaining pending (unsaved) files in this group
-        for (PendingAttachment pa : pendingAdds) {
-            if (resolvedGroupName.equals(pa.group != null ? pa.group : "")) return; // still has files
-        }
-        // Group is now empty — keep it alive as an empty group
-        pendingEmptyGroups.add(resolvedGroupName);
-    }
-
-    private void deleteGroup(String groupName) {
-        // Mark all saved attachments in this group for removal
-        if (existingEntry != null) {
-            for (Attachment a : existingEntry.getAttachments()) {
-                String resolved = a.getGroup();
-                for (java.util.Map.Entry<String, String> e2 : renamedGroups.entrySet()) {
-                    if (e2.getKey().equals(a.getGroup())) { resolved = e2.getValue(); break; }
-                }
-                if (resolved.equals(groupName)) {
-                    originalGroups.putIfAbsent(a.getId(), a.getGroup());
-                    pendingRemovals.add(a.getId());
-                }
-            }
-        }
-        // Remove any pending (not-yet-saved) attachments in this group
-        pendingAdds.removeIf(pa -> groupName.equals(pa.group != null ? pa.group : ""));
-        // If this group existed in saved storage, record the deletion so hasUnsavedChanges() fires
-        if (existingEntry != null && existingEntry.getAttachmentGroups().contains(groupName)) {
-            deletedGroups.add(groupName);
-        }
-        // Clean up all tracking for this group
-        pendingEmptyGroups.remove(groupName);
-        expandedGroups.remove(groupName);
-        userCollapsedGroups.remove(groupName);
-        renderAttachmentList();
-    }
-
-    private void showRenameGroupDialog(String currentDisplayName) {
-        android.widget.EditText etName = new android.widget.EditText(this);
-        etName.setText(currentDisplayName);
-        etName.selectAll();
-        int pad = dpToPx(16);
-        etName.setPadding(pad, pad, pad, pad);
-        AlertDialog dlg = new MaterialAlertDialogBuilder(this)
-                .setTitle("Rename Group")
-                .setView(etName)
-                .setPositiveButton("Rename", null)
-                .setNegativeButton("Cancel", null)
-                .create();
-        dlg.show();
-        dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            String newName = etName.getText().toString().trim();
-            if (newName.isEmpty()) { etName.setError("Required"); return; }
-            if (newName.equals(currentDisplayName)) { dlg.dismiss(); return; }
-            // Apply rename to all saved attachments in this group
-            if (existingEntry != null) {
-                for (Attachment a : existingEntry.getAttachments()) {
-                    String resolvedGroup = a.getGroup();
-                    for (java.util.Map.Entry<String, String> e2 : renamedGroups.entrySet()) {
-                        if (e2.getKey().equals(a.getGroup())) { resolvedGroup = e2.getValue(); break; }
-                    }
-                    if (resolvedGroup.equals(currentDisplayName)) {
-                        // Track original group for revert
-                        originalGroups.putIfAbsent(a.getId(), a.getGroup());
-                        a.setGroup(newName);
-                    }
-                }
-            }
-            // Apply rename to pending adds in this group
-            for (PendingAttachment pa : pendingAdds) {
-                String paGroup = pa.group != null ? pa.group : "";
-                if (paGroup.equals(currentDisplayName)) pa.group = newName;
-            }
-            // Track the rename for discard revert (original name → new name)
-            // Remove the old entry and add new one so the chain stays correct
-            String trueOriginal = currentDisplayName;
-            for (java.util.Map.Entry<String, String> e2 : renamedGroups.entrySet()) {
-                if (e2.getValue().equals(currentDisplayName)) { trueOriginal = e2.getKey(); break; }
-            }
-            renamedGroups.remove(trueOriginal);
-            // Only record if it differs from what was on disk (original name)
-            if (!newName.equals(trueOriginal)) renamedGroups.put(trueOriginal, newName);
-            // Keep expandedGroups consistent
-            if (expandedGroups.remove(currentDisplayName)) expandedGroups.add(newName);
-            dlg.dismiss();
-            renderAttachmentList();
-        });
-        etName.post(() -> {
-            etName.requestFocus();
-            android.view.inputmethod.InputMethodManager imm =
-                    (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-            if (imm != null) imm.showSoftInput(etName,
-                    android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
-        });
-    }
-
-    private void addSavedAttachRow(Attachment att, String groupKey, boolean showIcon) {
-        addSavedAttachRow(att, groupKey, showIcon, false, false);
-    }
-
-    private void addSavedAttachRow(Attachment att, String groupKey, boolean showIcon, boolean indent) {
-        addSavedAttachRow(att, groupKey, showIcon, indent, false);
-    }
-
-    private void addSavedAttachRow(Attachment att, String groupKey, boolean showIcon, boolean indent, boolean doubleIndent) {
-        android.view.View row = getLayoutInflater()
-                .inflate(R.layout.item_attachment_row, attachmentListContainer, false);
-        TextView    tvLabel   = row.findViewById(R.id.tvAttachLabel);
-        ImageButton btnRename = row.findViewById(R.id.btnAttachRowRename);
-        ImageButton btnRemove = row.findViewById(R.id.btnAttachRowRemove);
-        android.view.View card = row.findViewById(R.id.attachRowCard);
-        android.view.View ivIcon = row.findViewById(R.id.ivAttachIcon);
-        if (ivIcon != null) ivIcon.setVisibility(showIcon
-                ? android.view.View.VISIBLE : android.view.View.GONE);
-        // Indent group files so they visually sit inside their group
-        if (indent || doubleIndent) {
-            LinearLayout.LayoutParams rowLp = (LinearLayout.LayoutParams) row.getLayoutParams();
-            if (rowLp == null) rowLp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            rowLp.setMarginStart(dpToPx(doubleIndent ? 32 : 16));
-            row.setLayoutParams(rowLp);
-        }
-
-        String displayName = att.getName().length() > 28
-                ? att.getName().substring(0, 25) + "…" : att.getName();
-        tvLabel.setText(displayName + "   " + formatBytes(att.getSize()));
-        card.setOnClickListener(v -> openSavedAttachmentWithProgress(att));
-        card.setBackground(null);
-
-        // Hide inline rename/remove buttons — actions handled via long-press
-        if (btnRename != null) btnRename.setVisibility(android.view.View.GONE);
-        if (btnRemove != null) btnRemove.setVisibility(android.view.View.GONE);
-
-        // Long press (edit mode): Rename / Delete
-        if (isEditMode) {
-            card.setLongClickable(true);
-            card.setOnLongClickListener(v -> {
-                new MaterialAlertDialogBuilder(DetailActivity.this)
-                        .setTitle(att.getName())
-                        .setAdapter(menuAdapter(new String[]{"\u270F\uFE0F  Rename", "\uD83D\uDDD1\uFE0F  Delete"}), (dlg, which) -> {
-                            if (which == 0) {
-                                android.widget.EditText etName = new android.widget.EditText(this);
-                                etName.setText(att.getName());
-                                etName.selectAll();
-                                int p = dpToPx(16);
-                                etName.setPadding(p, p, p, p);
-                                new MaterialAlertDialogBuilder(this)
-                                        .setTitle("Rename Attachment")
-                                        .setView(etName)
-                                        .setPositiveButton("Rename", (d2, w2) -> {
-                                            String newName = etName.getText().toString().trim();
-                                            if (!newName.isEmpty() && !newName.equals(att.getName())) {
-                                                renamedOriginals.putIfAbsent(att.getId(), att.getName());
-                                                att.setName(newName);
-                                                renderAttachmentList();
-                                            }
-                                        })
-                                        .setNegativeButton("Cancel", null)
-                                        .show();
-                            } else {
-                                new MaterialAlertDialogBuilder(this)
-                                        .setTitle("Remove Attachment")
-                                        .setMessage("Remove \"" + att.getName() + "\"?\n\nIt will be permanently deleted when you save.")
-                                        .setPositiveButton("Remove", (d2, w2) -> {
-                                            pendingRemovals.add(att.getId());
-                                            // Keep the group header alive if this was the last file
-                                            preserveGroupIfNowEmpty(groupKey);
-                                            renderAttachmentList();
-                                        })
-                                        .setNegativeButton("Cancel", null)
-                                        .show();
-                            }
-                        })
-                        .show();
-                return true;
-            });
-        }
-        attachmentListContainer.addView(row);
-    }
-
-    private void addPendingAttachRow(PendingAttachment pa, boolean showIcon) {
-        addPendingAttachRow(pa, showIcon, false, false);
-    }
-
-    private void addPendingAttachRow(PendingAttachment pa, boolean showIcon, boolean indent) {
-        addPendingAttachRow(pa, showIcon, indent, false);
-    }
-
-    private void addPendingAttachRow(PendingAttachment pa, boolean showIcon, boolean indent, boolean doubleIndent) {
-        android.view.View row = getLayoutInflater()
-                .inflate(R.layout.item_attachment_row, attachmentListContainer, false);
-        TextView    tvLabel   = row.findViewById(R.id.tvAttachLabel);
-        ImageButton btnRename = row.findViewById(R.id.btnAttachRowRename);
-        ImageButton btnRemove = row.findViewById(R.id.btnAttachRowRemove);
-        android.view.View card = row.findViewById(R.id.attachRowCard);
-        android.view.View ivIcon = row.findViewById(R.id.ivAttachIcon);
-        if (ivIcon != null) ivIcon.setVisibility(showIcon
-                ? android.view.View.VISIBLE : android.view.View.GONE);
-        if (indent || doubleIndent) {
-            LinearLayout.LayoutParams rowLp = (LinearLayout.LayoutParams) row.getLayoutParams();
-            if (rowLp == null) rowLp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            rowLp.setMarginStart(dpToPx(doubleIndent ? 32 : 16));
-            row.setLayoutParams(rowLp);
-        }
-
-        String pendingDisplayName = pa.name.length() > 28
-                ? pa.name.substring(0, 25) + "…" : pa.name;
-        tvLabel.setText(pendingDisplayName + "   " + formatBytes(pa.bytes.length) + "  ·  pending");
-        card.setBackground(null);
-        card.setClickable(isEditMode);
-        card.setOnClickListener(null);
-
-        // Hide inline rename/remove buttons — actions handled via long-press
-        if (btnRename != null) btnRename.setVisibility(android.view.View.GONE);
-        if (btnRemove != null) btnRemove.setVisibility(android.view.View.GONE);
-
-        // Long press (edit mode): Rename / Delete
-        if (isEditMode) {
-            card.setLongClickable(true);
-            card.setOnLongClickListener(v -> {
-                new MaterialAlertDialogBuilder(DetailActivity.this)
-                        .setTitle(pa.name)
-                        .setAdapter(menuAdapter(new String[]{"\u270F\uFE0F  Rename", "\uD83D\uDDD1\uFE0F  Delete"}), (dlg, which) -> {
-                            if (which == 0) {
-                                android.widget.EditText etName = new android.widget.EditText(this);
-                                etName.setText(pa.name);
-                                etName.selectAll();
-                                int p = dpToPx(16);
-                                etName.setPadding(p, p, p, p);
-                                new MaterialAlertDialogBuilder(this)
-                                        .setTitle("Rename Attachment")
-                                        .setView(etName)
-                                        .setPositiveButton("Rename", (d2, w2) -> {
-                                            String newName = etName.getText().toString().trim();
-                                            if (!newName.isEmpty()) { pa.name = newName; renderAttachmentList(); }
-                                        })
-                                        .setNegativeButton("Cancel", null)
-                                        .show();
-                            } else {
-                                String paGroup = pa.group != null ? pa.group : "";
-                                pendingAdds.remove(pa);
-                                // Keep the group header alive if this was the last file
-                                preserveGroupIfNowEmpty(paGroup);
-                                renderAttachmentList();
-                            }
-                        })
-                        .show();
-                return true;
-            });
-        }
-        attachmentListContainer.addView(row);
-    }
-
-    private void addAddToGroupButton(String groupName) {
-        float d = getResources().getDisplayMetrics().density;
-        int pad = Math.round(8 * d);
-        int mb  = Math.round(4 * d);
-
-        com.google.android.material.button.MaterialButton btn =
-                new com.google.android.material.button.MaterialButton(this,
-                        null, com.google.android.material.R.attr.borderlessButtonStyle);
-        btn.setText("+ Add to " + groupName);
-        btn.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13);
-        btn.setPadding(pad, pad / 2, pad, pad / 2);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        lp.bottomMargin = mb;
-        lp.setMarginStart(dpToPx(8));
-        btn.setLayoutParams(lp);
-        btn.setOnClickListener(v -> {
-            int currentCount = (existingEntry != null ? existingEntry.getAttachments().size() : 0)
-                    - pendingRemovals.size() + pendingAdds.size();
-            int slotsLeft = MAX_ATTACHMENT_COUNT - currentCount;
-            if (slotsLeft <= 0) {
-                Toast.makeText(this, "Maximum " + MAX_ATTACHMENT_COUNT + " attachments per entry.",
-                        Toast.LENGTH_SHORT).show();
-                return;
-            }
-            launchPickerForGroup(slotsLeft, groupName);
-        });
-        attachmentListContainer.addView(btn);
-    }
-
-    /** Opens a saved attachment with a progress toast while decrypting. */
-    private void openSavedAttachmentWithProgress(Attachment att) {
-        Toast loading = Toast.makeText(this, "Opening…", Toast.LENGTH_SHORT);
-        loading.show();
-        new Thread(() -> {
-            byte[] bytes;
-            try {
-                bytes = attachmentStore.read(att.getId());
-            } catch (Exception e) {
-                loading.cancel();
-                runOnUiThread(() -> new MaterialAlertDialogBuilder(this)
-                        .setTitle("File Not Found")
-                        .setMessage("The attachment file could not be read. It may have been deleted.")
-                        .setPositiveButton("OK", null)
-                        .show());
-                return;
-            }
-            loading.cancel();
-            runOnUiThread(() -> openBytesAsFile(bytes, att.getId(), att.getName(), att.getMimeType()));
-        }).start();
-    }
-
-    /** Writes bytes to cache and fires ACTION_VIEW intent. */
-    private void openBytesAsFile(byte[] bytes, String attachmentId, String name, String mimeType) {
-        try {
-            String entryId = (existingEntry != null) ? existingEntry.getId() : "pending";
-            File cacheDir = new File(getCacheDir(), "attachments/" + entryId);
-            //noinspection ResultOfMethodCallIgnored
-            cacheDir.mkdirs();
-            // Sanitize filename to prevent path traversal via crafted content-provider names.
-            // Keeps alphanumerics, dots, hyphens and underscores; replaces everything else with _.
-            String safeName = name.replaceAll("[^a-zA-Z0-9._\\-]", "_");
-            if (safeName.isEmpty()) safeName = "attachment";
-            // Prefix with attachment UUID to prevent collision when two files share the same name.
-            String cacheFileName = attachmentId + "_" + safeName;
-            File outFile = new File(cacheDir, cacheFileName);
-            try (FileOutputStream fos = new FileOutputStream(outFile)) { fos.write(bytes); }
-
-            Uri fileUri = FileProvider.getUriForFile(this,
-                    getPackageName() + ".fileprovider", outFile);
-
-            String mime = (mimeType != null && !mimeType.isEmpty()) ? mimeType : "*/*";
-
-            Intent viewIntent = new Intent(Intent.ACTION_VIEW);
-            viewIntent.setDataAndType(fileUri, mime);
-            viewIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    | Intent.FLAG_ACTIVITY_NEW_DOCUMENT
-                    | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
-            viewIntent.setClipData(ClipData.newRawUri("attachment", fileUri));
-
-            Intent chooser = Intent.createChooser(viewIntent, "Open with");
-            chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    | Intent.FLAG_ACTIVITY_NEW_DOCUMENT
-                    | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
-            try {
-                startActivity(chooser);
-            } catch (ActivityNotFoundException ex) {
-                Toast.makeText(this, R.string.no_app_to_open, Toast.LENGTH_SHORT).show();
-            }
-        } catch (Exception e) {
-            Toast.makeText(this, R.string.attachment_open_error, Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    // v20: Camera capture ─────────────────────────────────────────────────────
-
-    /** Checks camera permission then launches the camera capture intent. */
-    private void launchCamera() {
-        if (checkSelfPermission(android.Manifest.permission.CAMERA)
-                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{android.Manifest.permission.CAMERA}, 101);
-            return;
-        }
-        startCameraCapture();
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == 101) {
-            if (grantResults.length > 0
-                    && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                startCameraCapture();
-            } else {
-                Toast.makeText(this, "Camera permission denied", Toast.LENGTH_SHORT).show();
-            }
-        }
-    }
-
-    /** Creates a temp file and launches the camera. */
-    private void startCameraCapture() {
-        try {
-            java.io.File cameraDir = new java.io.File(getCacheDir(), "camera");
-            //noinspection ResultOfMethodCallIgnored
-            cameraDir.mkdirs();
-            java.io.File photoFile = new java.io.File(cameraDir, "capture_" + System.currentTimeMillis() + ".jpg");
-            cameraOutputUri = androidx.core.content.FileProvider.getUriForFile(
-                    this, getPackageName() + ".fileprovider", photoFile);
-            cameraPicker.launch(cameraOutputUri);
-        } catch (Exception e) {
-            Toast.makeText(this, "Could not open camera", Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    /** Called when camera capture completes successfully — auto-compresses if needed, appends to pendingAdds. */
-    private void handleCameraCapture() {
-        try {
-            byte[] bytes;
-            try (InputStream is = getContentResolver().openInputStream(cameraOutputUri)) {
-                if (is == null) throw new Exception("Cannot read captured photo");
-                bytes = readStreamBytes(is);
-            }
-
-            // Delete the temp file immediately
-            try {
-                java.io.File tempFile = new java.io.File(cameraOutputUri.getPath());
-                if (tempFile.exists()) tempFile.delete();
-            } catch (Exception ignored) { }
-            cameraOutputUri = null;
-
-            // Auto-compress if over size limit
-            if (bytes.length > MAX_SINGLE_BYTES) {
-                android.graphics.Bitmap bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
-                if (bitmap == null) throw new Exception("Cannot decode photo");
-                int[] qualities = {80, 60, 40};
-                byte[] compressed = null;
-                for (int quality : qualities) {
-                    java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-                    bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, baos);
-                    compressed = baos.toByteArray();
-                    if (compressed.length <= MAX_SINGLE_BYTES) break;
-                }
-                bitmap.recycle();
-                if (compressed == null || compressed.length > MAX_SINGLE_BYTES) {
-                    new MaterialAlertDialogBuilder(this)
-                            .setTitle("File Too Large")
-                            .setMessage(getString(R.string.file_too_large) + "  (" + formatBytes(bytes.length) + ")")
-                            .setPositiveButton("OK", null).show();
-                    return;
-                }
-                bytes = compressed;
-            }
-
-            // Check total size limit across all attachments
-            if (!checkTotalSizeLimit(bytes.length)) return;
-
-            String fileName = "photo_" + new java.text.SimpleDateFormat(
-                    "yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(new java.util.Date()) + ".jpg";
-            pendingAdds.add(new PendingAttachment(fileName, "image/jpeg", bytes, pendingPickGroup));
-            pendingEmptyGroups.remove(pendingPickGroup);
-            renderAttachmentList();
-
-        } catch (Exception e) {
-            Toast.makeText(this, getString(R.string.attachment_open_error), Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    /** Handles one or more files picked from the system file picker. */
-    private void handleAttachmentsPicked(java.util.List<android.net.Uri> uris) {
-        // Capture the target group for this pick session
-        final String targetGroup = pendingPickGroup;
-        // Snapshot current state on main thread before spawning background work
-        final int slotStart = (existingEntry != null ? existingEntry.getAttachments().size() : 0)
-                - pendingRemovals.size() + pendingAdds.size();
-        long existingSize = 0;
-        if (existingEntry != null) {
-            for (Attachment a : existingEntry.getAttachments()) {
-                if (!pendingRemovals.contains(a.getId())) existingSize += a.getSize();
-            }
-        }
-        for (PendingAttachment pa : pendingAdds) existingSize += pa.bytes.length;
-        final long sizeStart = existingSize;
-
-        // Show progress while reading — file I/O can be significant for multiple large files
-        ProgressBar pb = new ProgressBar(this);
-        pb.setIndeterminate(true);
-        int pad = Math.round(24 * getResources().getDisplayMetrics().density);
-        pb.setPadding(pad, pad, pad, pad);
-        AlertDialog progress = new MaterialAlertDialogBuilder(this)
-                .setTitle("Reading files\u2026")
-                .setView(pb)
-                .setCancelable(false)
-                .create();
-        progress.show();
-
-        new Thread(() -> {
-            java.util.List<PendingAttachment> newAdds = new java.util.ArrayList<>();
-            int skippedTooLarge = 0;
-            int skippedCap      = 0;
-            int skippedTotal    = 0;
-            int slotCount       = slotStart;
-            long runningSize    = sizeStart;
-
-            for (android.net.Uri uri : uris) {
-                if (slotCount >= MAX_ATTACHMENT_COUNT) { skippedCap++; continue; }
-                try {
-                    byte[] bytes;
-                    try (InputStream is = getContentResolver().openInputStream(uri)) {
-                        if (is == null) { skippedTooLarge++; continue; }
-                        bytes = readStreamBytes(is);
-                    }
-                    if (bytes.length > MAX_SINGLE_BYTES) { skippedTooLarge++; continue; }
-                    if (runningSize + bytes.length > MAX_TOTAL_BYTES) { skippedTotal++; continue; }
-
-                    String fileName = "attachment";
-                    android.database.Cursor cursor = getContentResolver().query(
-                            uri, null, null, null, null);
-                    if (cursor != null && cursor.moveToFirst()) {
-                        int idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
-                        if (idx >= 0) fileName = cursor.getString(idx);
-                        cursor.close();
-                    }
-                    String mimeType = getContentResolver().getType(uri);
-                    if (mimeType == null || mimeType.isEmpty()) mimeType = "application/octet-stream";
-                    newAdds.add(new PendingAttachment(fileName, mimeType, bytes, targetGroup));
-                    slotCount++;
-                    runningSize += bytes.length;
-                } catch (Exception e) {
-                    skippedTooLarge++;
-                }
-            }
-
-            final java.util.List<PendingAttachment> finalAdds = newAdds;
-            final int fTooLarge = skippedTooLarge;
-            final int fCap      = skippedCap;
-            final int fTotal    = skippedTotal;
-
-            runOnUiThread(() -> {
-                progress.dismiss();
-                pendingAdds.addAll(finalAdds);
-                if (!finalAdds.isEmpty()) pendingEmptyGroups.remove(targetGroup);
-                renderAttachmentList();
-
-                int totalSkipped = fTooLarge + fCap + fTotal;
-                if (totalSkipped > 0) {
-                    String reason;
-                    if (fCap > 0)
-                        reason = "Maximum " + MAX_ATTACHMENT_COUNT + " attachments per entry.";
-                    else if (fTotal > 0)
-                        reason = "Total size limit (" + formatBytes(MAX_TOTAL_BYTES) + ") reached.";
-                    else
-                        reason = totalSkipped + " file(s) too large (max " + formatBytes(MAX_SINGLE_BYTES) + " each).";
-                    Toast.makeText(DetailActivity.this,
-                            totalSkipped + " file(s) skipped. " + reason, Toast.LENGTH_LONG).show();
-                }
-            });
-        }).start();
-    }
-
-    /**
-     * Checks whether adding newBytes would exceed the total limit.
-     * Shows an error dialog and returns false if it would.
-     * Used only for single-file paths (camera capture).
-     */
-    private boolean checkTotalSizeLimit(long newBytes) {
-        long total = newBytes;
-        if (existingEntry != null) {
-            for (Attachment a : existingEntry.getAttachments()) {
-                if (!pendingRemovals.contains(a.getId())) total += a.getSize();
-            }
-        }
-        for (PendingAttachment pa : pendingAdds) total += pa.bytes.length;
-        if (total > MAX_TOTAL_BYTES) {
-            new MaterialAlertDialogBuilder(this)
-                    .setTitle("Total Size Exceeded")
-                    .setMessage("Total attachments cannot exceed " + formatBytes(MAX_TOTAL_BYTES) + ".")
-                    .setPositiveButton("OK", null).show();
-            return false;
-        }
-        return true;
-    }
-
-    /** Reads all bytes from an InputStream. Compatible with API 23+. */
-    private byte[] readStreamBytes(InputStream is) throws java.io.IOException {
-        java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
-        byte[] chunk = new byte[8192];
-        int n;
-        while ((n = is.read(chunk)) != -1) buffer.write(chunk, 0, n);
-        return buffer.toByteArray();
-    }
-
-    /**
-     * Returns a hint suggesting what kind of app to install for the given extension.
-     * Called only when no app is found on the device.
-     */
-    private String getSuggestedAppHint(String ext) {
-        switch (ext) {
-            case "pdf":
-                return "Try installing a PDF viewer such as:\n• Adobe Acrobat Reader\n• Google Drive\n• WPS Office";
-            case "doc": case "docx":
-                return "Try installing a Word processor such as:\n• Microsoft Word\n• WPS Office\n• Google Docs";
-            case "xls": case "xlsx":
-                return "Try installing a Spreadsheet app such as:\n• Microsoft Excel\n• WPS Office\n• Google Sheets";
-            case "ppt": case "pptx":
-                return "Try installing a Presentation app such as:\n• Microsoft PowerPoint\n• WPS Office\n• Google Slides";
-            case "jpg": case "jpeg": case "png": case "gif": case "webp": case "bmp":
-                return "Try installing a photo viewer such as:\n• Google Photos\n• Gallery";
-            case "mp4": case "mkv": case "avi": case "mov": case "3gp":
-                return "Try installing a video player such as:\n• VLC\n• MX Player\n• Google Photos";
-            case "mp3": case "aac": case "wav": case "flac": case "ogg":
-                return "Try installing a music player such as:\n• VLC\n• Google Play Music\n• Spotify";
-            case "zip": case "rar": case "7z":
-                return "Try installing a file archive app such as:\n• ZArchiver\n• RAR\n• Files by Google";
-            case "txt": case "csv": case "log":
-                return "Try installing a text editor such as:\n• Simple Text Editor\n• Files by Google\n• Notepad";
-            default:
-                return "Try installing Files by Google or a file manager app that can open this format.";
-        }
-    }
-
-    /** Formats bytes to human-readable string. */
-    private String formatBytes(long bytes) {
-        if (bytes < 1024) return bytes + " B";
-        if (bytes < 1024 * 1024) return String.format("%.1f KB", bytes / 1024.0);
-        return String.format("%.1f MB", bytes / (1024.0 * 1024));
-    }
-
     private String formatDate(long millis) {
         java.util.Calendar now = java.util.Calendar.getInstance();
         java.util.Calendar then = java.util.Calendar.getInstance();
@@ -3195,29 +1972,4 @@ public class DetailActivity extends BaseActivity {
         return fmt.format(new java.util.Date(millis));
     }
 
-    // ── v24: PendingAttachment ────────────────────────────────────────────────
-
-    /**
-     * Holds a file the user has picked but that has not yet been written to
-     * AttachmentStore. Lives only in memory until saveEntry() is called.
-     * On discard (Back → Discard / btnBarDiscard), pendingAdds is cleared
-     * and no files are ever written to disk.
-     */
-    static class PendingAttachment {
-        String name;  // mutable — user can rename before saving
-        String group; // v27: mutable — user can assign/change group before saving
-        final String mimeType;
-        final byte[] bytes;
-
-        PendingAttachment(String name, String mimeType, byte[] bytes) {
-            this(name, mimeType, bytes, "");
-        }
-
-        PendingAttachment(String name, String mimeType, byte[] bytes, String group) {
-            this.name     = name;
-            this.mimeType = mimeType;
-            this.bytes    = bytes;
-            this.group    = group != null ? group : "";
-        }
-    }
 }

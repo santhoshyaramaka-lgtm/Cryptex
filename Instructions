@@ -1,5 +1,3 @@
-0.Always let me know the complexity and impact. and from user preceptive how this works.
-1.Never start coding without my approval, Always let me know what do you understand from the requests.
-2.Suggest best approach or plan from your end.
-3.Before moveing to next task do proper audit of current task and Update the status/Nextstep every time.
-4.once build done, always copy the .apk file to this location G:\My Drive\Cryptex
+1.Don't write code without my approval
+2.Always let me know what do you understood from my prompt.
+3.Always make sure that changes should not impact on any other usecases. Change should strictly to that bug / feature.

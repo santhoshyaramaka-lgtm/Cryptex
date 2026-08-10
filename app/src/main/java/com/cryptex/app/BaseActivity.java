@@ -89,7 +89,7 @@ public abstract class BaseActivity extends AppCompatActivity {
      * true they must return immediately without doing any further work.
      */
     protected boolean checkAndHandleAutoLock() {
-        if (this instanceof PinActivity || this instanceof OnboardingActivity) return false;
+        if (this instanceof PinActivity) return false;
         if (baseStorage == null) baseStorage = StorageHelper.getInstance(this);
         boolean forcedLock = baseStorage.isForcedLock();
         int  timeout = baseStorage.getAutoLockTimeout();
@@ -131,7 +131,7 @@ public abstract class BaseActivity extends AppCompatActivity {
 
         // Warn user if encrypted storage failed to initialise
         if (baseStorage.isEncryptionFailed() && !encryptionWarningShown
-                && !(this instanceof PinActivity) && !(this instanceof OnboardingActivity)) {
+                && !(this instanceof PinActivity)) {
             encryptionWarningShown = true;
             new androidx.appcompat.app.AlertDialog.Builder(this)
                     .setTitle("⚠️ Security Warning")
@@ -212,10 +212,9 @@ public abstract class BaseActivity extends AppCompatActivity {
      * Excluded from PinActivity: a lock screen must never trigger a backup.
      */
     private void triggerAutoBackup() {
-        if (this instanceof PinActivity || this instanceof OnboardingActivity) return;
+        if (this instanceof PinActivity) return;
         if (baseStorage == null) baseStorage = StorageHelper.getInstance(this);
 
-        if (!baseStorage.isAutoBackupEnabled()) return;
         if (!baseStorage.isBackupPending())     return;
         if (!baseStorage.hasBackupPassword() || !baseStorage.hasBackupUri()) return;
 
@@ -234,24 +233,7 @@ public abstract class BaseActivity extends AppCompatActivity {
                 String json = baseStorage.exportToJson(entries);
                 if (json == null) return;
 
-                // v24: collect attachment files for ZIP backup
-                AttachmentStore attachmentStore = new AttachmentStore(BaseActivity.this);
-                java.util.List<BackupCrypto.AttachmentItem> attachmentItems =
-                        new java.util.ArrayList<>();
-                for (Entry entry : entries) {
-                    for (Attachment att : entry.getAttachments()) {
-                        try {
-                            byte[] data = attachmentStore.read(att.getId());
-                            attachmentItems.add(
-                                    new BackupCrypto.AttachmentItem(att.getId(), data));
-                        } catch (Exception ignored) {
-                            // Skip unreadable attachment — rest of backup still runs
-                        }
-                    }
-                }
-
-                byte[] encrypted = BackupCrypto.encryptZip(json, attachmentItems, password,
-                        baseStorage.exportCustomCategoriesJson());
+                byte[] encrypted = BackupCrypto.encryptZip(json, password);
 
                 Uri uri = Uri.parse(uriString);
                 try (OutputStream os = getContentResolver().openOutputStream(uri, "w")) {

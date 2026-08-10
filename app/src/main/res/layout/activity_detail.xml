@@ -83,6 +83,16 @@
             android:src="@drawable/ic_delete"
             android:visibility="gone"/>
 
+        <!-- Note format picker — visible in NOTE edit mode only -->
+        <ImageButton
+            android:id="@+id/btnNoteFormat"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Text format"
+            android:src="@drawable/ic_format_text"
+            android:visibility="gone"/>
+
         <!-- Overflow menu — visible in EDIT mode only (Manage Fields, Share, Delete) -->
         <ImageButton
             android:id="@+id/btnOverflow"
@@ -280,33 +290,7 @@
 
             </LinearLayout>
 
-            <!-- v24: Attachments section — replaces single-attachment row (v9) -->
-
-            <!-- Dynamic attachment rows — populated by DetailActivity.renderAttachmentList() -->
-            <LinearLayout
-                android:id="@+id/attachmentListContainer"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"/>
-
-            <!-- Add attachment button — visible in EDIT mode only -->
-            <TextView
-                android:id="@+id/btnAddAttachment"
-                android:layout_width="wrap_content"
-                android:layout_height="36dp"
-                android:text="@string/add_attachment"
-                android:textColor="@color/accent"
-                android:textSize="14sp"
-                android:gravity="center_vertical"
-                android:drawableStart="@drawable/ic_add"
-                android:drawablePadding="4dp"
-                android:paddingStart="4dp"
-                android:paddingEnd="8dp"
-                android:layout_marginTop="0dp"
-                android:background="?attr/selectableItemBackground"
-                android:visibility="gone"/>
-
-            <!-- Date label: Added / Modified — right-aligned, VIEW mode only, below attachments -->
+            <!-- Date label: Added / Modified — right-aligned, VIEW mode only -->
             <TextView
                 android:id="@+id/tvDateLabel"
                 android:layout_width="match_parent"

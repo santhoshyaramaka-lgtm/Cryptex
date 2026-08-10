@@ -26,11 +26,9 @@ public class Entry {
     private long    createdAt     = 0; // v12: set once on creation, never changed on edit
     private boolean isFavourite   = false;
     private long    pinnedAt      = 0;
-    private List<Attachment> attachments = new ArrayList<>(); // v24: multiple attachments
     private boolean isArchived     = false; // v19: archived entries hidden from lists
     private List<ChecklistItem> checklistItems = new ArrayList<>(); // v20: checklist type
-    private List<String> attachmentGroups = new ArrayList<>(); // v29: named groups (including empty ones)
-    private List<CustomField> recordFields = new ArrayList<>(); // v29: per-record field definitions (custom categories only)
+    private List<CustomField> recordFields = new ArrayList<>(); // v29: per-record field definitions (others/custom types)
     private boolean recordIncludeNotes = true; // v29: whether Notes field is shown for this record
 
     public Entry(String id, String type,
@@ -85,11 +83,6 @@ public class Entry {
     public long getPinnedAt()             { return pinnedAt; }
     public void setPinnedAt(long millis)  { this.pinnedAt = millis; }
 
-    // ── Attachments (v24: multiple attachments — replaces single v9 attachment) ──────────────
-    public List<Attachment> getAttachments()                          { return attachments; }
-    public void             setAttachments(List<Attachment> list)     { this.attachments = list != null ? list : new ArrayList<>(); }
-    public boolean          hasAttachment()                           { return !attachments.isEmpty(); }
-
     // ── isArchived (v19) ──────────────────────────────────────────────────────
     public boolean isArchived()                    { return isArchived; }
     public void    setArchived(boolean archived)   { this.isArchived = archived; }
@@ -97,10 +90,6 @@ public class Entry {
     // ── checklistItems (v20) ──────────────────────────────────────────────────
     public List<ChecklistItem> getChecklistItems()                         { return checklistItems; }
     public void                setChecklistItems(List<ChecklistItem> items){ this.checklistItems = items != null ? items : new ArrayList<>(); }
-
-    // ── attachmentGroups (v29) ────────────────────────────────────────────────
-    public List<String> getAttachmentGroups()                          { return attachmentGroups; }
-    public void         setAttachmentGroups(List<String> groups)       { this.attachmentGroups = groups != null ? groups : new ArrayList<>(); }
 
     // ── recordFields + recordIncludeNotes (v29: per-record field defs) ────────
     public List<CustomField> getRecordFields()                              { return recordFields; }
