@@ -387,7 +387,7 @@ public class StorageHelper {
         prefs.edit().putInt(KEY_AUTOLOCK, seconds).apply();
     }
     public int getAutoLockTimeout() {
-        return prefs.getInt(KEY_AUTOLOCK, 0); // 0 = disabled
+        return prefs.getInt(KEY_AUTOLOCK, 60); // 60 = 1 minute default
     }
 
     // ── Last background timestamp ──────────────────────────────────

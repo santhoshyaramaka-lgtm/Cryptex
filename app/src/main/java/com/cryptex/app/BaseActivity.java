@@ -215,7 +215,6 @@ public abstract class BaseActivity extends AppCompatActivity {
         if (this instanceof PinActivity) return;
         if (baseStorage == null) baseStorage = StorageHelper.getInstance(this);
 
-        if (!baseStorage.isAutoBackupEnabled()) return;
         if (!baseStorage.isBackupPending())     return;
         if (!baseStorage.hasBackupPassword() || !baseStorage.hasBackupUri()) return;
 

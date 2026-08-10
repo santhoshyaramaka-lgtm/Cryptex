@@ -83,6 +83,16 @@
             android:src="@drawable/ic_delete"
             android:visibility="gone"/>
 
+        <!-- Note format picker — visible in NOTE edit mode only -->
+        <ImageButton
+            android:id="@+id/btnNoteFormat"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Text format"
+            android:src="@drawable/ic_format_text"
+            android:visibility="gone"/>
+
         <!-- Overflow menu — visible in EDIT mode only (Manage Fields, Share, Delete) -->
         <ImageButton
             android:id="@+id/btnOverflow"

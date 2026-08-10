@@ -49,7 +49,7 @@ public class MainActivity extends BaseActivity {
     private java.util.Map<String, Integer> lastTileCounts = null;
     private java.util.Set<String>          hiddenTypes    = new java.util.HashSet<>();
 
-    private boolean isListMode = false; // false = grid (default), true = list
+    private boolean isListMode = true; // false = grid, true = list (default)
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -77,7 +77,7 @@ public class MainActivity extends BaseActivity {
                 startActivity(new Intent(this, SettingsActivity.class)));
 
         // View toggle (grid ↔ list)
-        isListMode = getPreferences(MODE_PRIVATE).getBoolean("pref_list_mode", false);
+        isListMode = getPreferences(MODE_PRIVATE).getBoolean("pref_list_mode", true);
         ImageButton btnViewToggle = findViewById(R.id.btnViewToggle);
         btnViewToggle.setImageResource(isListMode ? R.drawable.ic_grid : R.drawable.ic_list);
         btnViewToggle.setOnClickListener(v -> {

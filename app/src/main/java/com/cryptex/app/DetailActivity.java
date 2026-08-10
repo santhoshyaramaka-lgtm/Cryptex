@@ -67,6 +67,10 @@ public class DetailActivity extends BaseActivity {
 
     // Top-bar buttons
     private ImageButton btnEdit, btnShare, btnDelete, btnArchive, btnOverflow;
+    private ImageButton btnNoteFormat; // Note type only — format picker in edit mode
+
+    // Card type detection label (edit mode only, Card type only)
+    private TextView cardTypeLabelView = null;
 
     // v9: Unsaved-changes action bar
     private LinearLayout saveActionBar;
@@ -79,6 +83,15 @@ public class DetailActivity extends BaseActivity {
     // v12: Created date label shown in VIEW mode
     private TextView    tvCreatedAt;
     private View        noteEndDivider; // shown at end of Note body in VIEW mode only
+
+    // Note-body formatting toolbar (edit mode only)
+    private static final int FORMAT_PARAGRAPH = 0;
+    private static final int FORMAT_BULLET    = 1;
+    private static final int FORMAT_NUMBERED  = 2;
+    private static final int FORMAT_HEADING   = 3;
+    private int              activeNoteFormat  = FORMAT_PARAGRAPH;
+    private LinearLayout     noteFormatToolbar = null;
+    private final TextView[] noteFormatBtns    = new TextView[4];
 
     // v20: Checklist views
     private boolean      checklistRendering = false; // re-entrancy guard for renderChecklist()
@@ -131,6 +144,52 @@ public class DetailActivity extends BaseActivity {
         btnDelete       = findViewById(R.id.btnDelete);
         btnArchive      = findViewById(R.id.btnArchive);
         btnOverflow     = findViewById(R.id.btnOverflow);
+        btnNoteFormat   = findViewById(R.id.btnNoteFormat);
+        btnNoteFormat.setOnClickListener(v -> {
+            android.widget.PopupMenu popup = new android.widget.PopupMenu(this, btnNoteFormat);
+            String[] labels = { "¶  Free text", "•  Bullet", "1.  Numbered", "H  Heading" };
+            for (int i = 0; i < labels.length; i++) {
+                String label = (i == activeNoteFormat ? "✓  " : "     ") + labels[i];
+                popup.getMenu().add(0, i, i, label);
+            }
+            popup.setOnMenuItemClickListener(item -> {
+                int fmt = item.getItemId();
+                activeNoteFormat = fmt;
+                updateNoteFormatIcon();
+                // If cursor is on an empty line, insert prefix immediately
+                EditText body = editViews[6];
+                if (body == null || fmt == FORMAT_PARAGRAPH) return true;
+                android.text.Editable e = body.getText();
+                int cursor = body.getSelectionStart();
+                if (cursor < 0) cursor = e.length();
+                int lineStart = cursor;
+                while (lineStart > 0 && e.charAt(lineStart - 1) != '\n') lineStart--;
+                int lineEnd = cursor;
+                while (lineEnd < e.length() && e.charAt(lineEnd) != '\n') lineEnd++;
+                String currentLine = e.subSequence(lineStart, lineEnd).toString();
+                if (!currentLine.trim().isEmpty()) return true;
+                String prefix = "";
+                switch (fmt) {
+                    case FORMAT_BULLET:   prefix = "\u2022 "; break;
+                    case FORMAT_NUMBERED:
+                        int prevEnd   = lineStart > 0 ? lineStart - 1 : 0;
+                        int prevStart = prevEnd;
+                        while (prevStart > 0 && e.charAt(prevStart - 1) != '\n') prevStart--;
+                        String prevLine = lineStart > 0 ? e.subSequence(prevStart, prevEnd).toString() : "";
+                        java.util.regex.Matcher m =
+                                java.util.regex.Pattern.compile("^(\\d+)\\.\\s").matcher(prevLine);
+                        prefix = m.find() ? (Integer.parseInt(m.group(1)) + 1) + ". " : "1. ";
+                        break;
+                    case FORMAT_HEADING:  prefix = "## "; break;
+                }
+                if (!prefix.isEmpty()) {
+                    e.replace(lineStart, lineEnd, prefix);
+                    body.setSelection(lineStart + prefix.length());
+                }
+                return true;
+            });
+            popup.show();
+        });
 
         // v29: Load per-record fields for custom categories and Others
         if (EntryType.isPerRecordFields(entryType)) {
@@ -303,7 +362,7 @@ public class DetailActivity extends BaseActivity {
                 if (editViews[0] != null) editViews[0].setText(existingEntry.getField1());
                 if (editViews[6] != null) editViews[6].setText(existingEntry.getField7());
                 if (viewTexts[0] != null) viewTexts[0].setText(existingEntry.getField1());
-                if (viewTexts[6] != null) viewTexts[6].setText(existingEntry.getField7());
+                if (viewTexts[6] != null) viewTexts[6].setText(renderNoteBodySpanned(existingEntry.getField7()));
             }
         } else {
             // All other types (built-in + custom) — normal field rows
@@ -326,8 +385,12 @@ public class DetailActivity extends BaseActivity {
             if (existingEntry != null) {
                 for (int i = 0; i < 7; i++) {
                     String val = existingEntry.getFieldByIndex(i + 1);
+                    // Card number: pre-format with spaces so TextWatcher starts clean
+                    if (EntryType.CARD.equals(entryType) && i == 2) {
+                        val = formatCardNumber(val);
+                    }
                     if (editViews[i]  != null) editViews[i].setText(val);
-                    if (viewTexts[i]  != null) setViewText(i, val);
+                    if (viewTexts[i]  != null) setViewText(i, existingEntry.getFieldByIndex(i + 1));
                 }
             }
         }
@@ -357,7 +420,12 @@ public class DetailActivity extends BaseActivity {
         // Freshly populate edit fields from the live entry values
         for (int i = 0; i < 7; i++) {
             if (editViews[i] != null && existingEntry != null) {
-                editViews[i].setText(existingEntry.getFieldByIndex(i + 1));
+                String val = existingEntry.getFieldByIndex(i + 1);
+                // Card number: pre-format with spaces before entering edit mode
+                if (EntryType.CARD.equals(entryType) && i == 2) {
+                    val = formatCardNumber(val);
+                }
+                editViews[i].setText(val);
             }
         }
         applyModeUI();
@@ -366,6 +434,8 @@ public class DetailActivity extends BaseActivity {
     private void switchToViewMode() {
         isEditMode = false;
         saveActionBar.setVisibility(View.GONE); // ensure action bar hidden on save
+        // Note format icon must be hidden immediately on any mode switch to view
+        if (btnNoteFormat != null) btnNoteFormat.setVisibility(View.GONE);
         // Sync view texts from the freshly saved entry
         for (int i = 0; i < 7; i++) {
             if (viewTexts[i] != null && existingEntry != null) {
@@ -434,6 +504,7 @@ public class DetailActivity extends BaseActivity {
             }
             // v12: hide "Added:" label in EDIT mode
             if (tvCreatedAt != null) tvCreatedAt.setVisibility(View.GONE);
+            // Card type label: keep current visibility (driven by TextWatcher)
 
         } else {
             // ── VIEW mode ─────────────────────────────────────────────────────
@@ -592,10 +663,6 @@ public class DetailActivity extends BaseActivity {
     private void resetReveal(int i) {
         if (!secretFlags[i]) return;
         revealed[i] = false;
-        // Reset eye button icon back to closed
-        if (eyeButtons[i] != null) {
-            eyeButtons[i].setImageResource(R.drawable.ic_eye_off);
-        }
         // Re-mask the edit field
         if (editViews[i] != null) {
             editViews[i].setInputType(
@@ -610,16 +677,22 @@ public class DetailActivity extends BaseActivity {
         }
     }
 
-    /** Sets the eye and edit field to OPEN/visible for edit mode entry. */
+    /** Sets the edit field to OPEN/visible for edit mode entry. */
     private void setRevealOpen(int i) {
         if (!secretFlags[i]) return;
         revealed[i] = true;
-        if (eyeButtons[i] != null) {
-            eyeButtons[i].setImageResource(R.drawable.ic_eye);
-        }
         if (editViews[i] != null) {
-            editViews[i].setInputType(
-                    InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
+            // Numeric-only fields must stay on numeric keypad even when revealed
+            // Card number and Expiry use TYPE_CLASS_PHONE to allow space/slash insertion by TextWatcher
+            boolean isPhoneInput = EntryType.CARD.equals(entryType) && (i == 2 || i == 3);
+            boolean isNumeric = (EntryType.CARD.equals(entryType) && (i == 4 || i == 5))
+                    || (EntryType.BANK.equals(entryType) && i == 2)
+                    || (EntryType.PIN.equals(entryType) && i == 1);
+            editViews[i].setInputType(isPhoneInput
+                    ? InputType.TYPE_CLASS_PHONE
+                    : isNumeric
+                            ? InputType.TYPE_CLASS_NUMBER
+                            : InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
             int len = editViews[i].getText().length();
             if (len > 0) editViews[i].setSelection(len);
         }
@@ -1072,6 +1145,100 @@ public class DetailActivity extends BaseActivity {
         LinearLayout.LayoutParams bodyEP = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         etBody.setLayoutParams(bodyEP);
+        // ── Format TextWatcher: auto-prefix new lines based on active format ──
+        etBody.addTextChangedListener(new android.text.TextWatcher() {
+            private boolean applyingFmt = false;
+            private int     insertStart = -1;
+            private int     insertLen   = 0;
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                insertStart = start;
+                insertLen   = count;
+            }
+            @Override public void afterTextChanged(android.text.Editable e) {
+                if (applyingFmt) return;
+
+                // ── Fallback to ¶ when user deletes the prefix on the current line ──
+                // Skip this check when the change is an Enter key press — the new empty line
+                // naturally has no prefix yet, which would falsely trigger the fallback.
+                boolean isEnterKey = (insertLen == 1 && insertStart >= 0
+                        && insertStart < e.length() && e.charAt(insertStart) == '\n');
+                if (!isEnterKey && activeNoteFormat != FORMAT_PARAGRAPH) {
+                    EditText body = editViews[6];
+                    if (body != null) {
+                        int cur = body.getSelectionStart();
+                        if (cur < 0) cur = e.length();
+                        int ls = cur;
+                        while (ls > 0 && e.charAt(ls - 1) != '\n') ls--;
+                        int le = cur;
+                        while (le < e.length() && e.charAt(le) != '\n') le++;
+                        String curLine = e.subSequence(ls, le).toString();
+                        boolean prefixGone = false;
+                        switch (activeNoteFormat) {
+                            case FORMAT_BULLET:   prefixGone = !curLine.startsWith("• ");   break;
+                            case FORMAT_NUMBERED: prefixGone = !curLine.matches("\\d+\\.\\s.*"); break;
+                            case FORMAT_HEADING:  prefixGone = !curLine.startsWith("## ");  break;
+                        }
+                        if (prefixGone) {
+                            activeNoteFormat = FORMAT_PARAGRAPH;
+                            applyNoteFormatToolbarHighlight();
+                        }
+                    }
+                }
+
+                // Only act on single-char inserts that are a newline (Enter key)
+                if (insertLen != 1 || insertStart < 0 || insertStart >= e.length()) return;
+                if (e.charAt(insertStart) != '\n') return;
+
+                int newLinePos         = insertStart;    // position of '\n' just inserted
+                int cursorAfterNewline = newLinePos + 1; // new empty line starts here
+
+                // Find the previous line (ends just before the '\n')
+                int prevLineEnd   = newLinePos;
+                int prevLineStart = prevLineEnd;
+                while (prevLineStart > 0 && e.charAt(prevLineStart - 1) != '\n') prevLineStart--;
+                String prevLine = e.subSequence(prevLineStart, prevLineEnd).toString();
+
+                // Smart escape: if previous line was only the auto-prefix (no actual content),
+                // remove it and revert to paragraph — avoids getting stuck in format mode
+                boolean prevIsBulletOnly   = (activeNoteFormat == FORMAT_BULLET)   && prevLine.equals("• ");
+                boolean prevIsNumberedOnly = (activeNoteFormat == FORMAT_NUMBERED) && prevLine.matches("\\d+\\.\\s");
+                boolean prevIsHeadingOnly  = (activeNoteFormat == FORMAT_HEADING)  && prevLine.equals("## ");
+                if (prevIsBulletOnly || prevIsNumberedOnly || prevIsHeadingOnly) {
+                    applyingFmt = true;
+                    e.delete(prevLineStart, cursorAfterNewline); // remove empty prefix + '\n'
+                    activeNoteFormat = FORMAT_PARAGRAPH;
+                    applyNoteFormatToolbarHighlight();
+                    applyingFmt = false;
+                    return;
+                }
+
+                // Determine prefix for the new line
+                String prefix = "";
+                switch (activeNoteFormat) {
+                    case FORMAT_BULLET:
+                        prefix = "• ";
+                        break;
+                    case FORMAT_NUMBERED:
+                        java.util.regex.Matcher m =
+                                java.util.regex.Pattern.compile("^(\\d+)\\.\\s").matcher(prevLine);
+                        prefix = m.find() ? (Integer.parseInt(m.group(1)) + 1) + ". " : "1. ";
+                        break;
+                    case FORMAT_HEADING:
+                        // Heading is one-shot — do NOT prefix the new line, just revert to ¶
+                        activeNoteFormat = FORMAT_PARAGRAPH;
+                        applyNoteFormatToolbarHighlight();
+                        break;
+                    default:
+                        break;
+                }
+                if (!prefix.isEmpty()) {
+                    applyingFmt = true;
+                    e.insert(cursorAfterNewline, prefix);
+                    applyingFmt = false;
+                }
+            }
+        });
         etBody.setVisibility(View.GONE);
         editViews[6] = etBody;
         container.addView(etBody);
@@ -1087,6 +1254,7 @@ public class DetailActivity extends BaseActivity {
             btnDelete.setVisibility(View.GONE);
             // Use overflow ⋮ in edit mode (consistent with all other types)
             btnOverflow.setVisibility(existingEntry != null ? View.VISIBLE : View.GONE);
+            if (btnNoteFormat != null) { btnNoteFormat.setVisibility(View.VISIBLE); updateNoteFormatIcon(); }
             if (editViews[0] != null) editViews[0].setVisibility(View.VISIBLE);
             if (editViews[6] != null) editViews[6].setVisibility(View.VISIBLE);
             if (viewTexts[0] != null) viewTexts[0].setVisibility(View.GONE);
@@ -1106,6 +1274,7 @@ public class DetailActivity extends BaseActivity {
             btnDelete.setVisibility(View.VISIBLE);
             btnArchive.setVisibility(View.VISIBLE);
             btnOverflow.setVisibility(View.GONE);
+            if (btnNoteFormat != null) btnNoteFormat.setVisibility(View.GONE);
             updateArchiveButton();
             if (editViews[0] != null) editViews[0].setVisibility(View.GONE);
             if (editViews[6] != null) editViews[6].setVisibility(View.GONE);
@@ -1121,6 +1290,44 @@ public class DetailActivity extends BaseActivity {
                 }
             }
         }
+    }
+
+    /** Updates the format icon in the top bar to reflect the currently active format. */
+    private void updateNoteFormatIcon() {
+        if (btnNoteFormat == null) return;
+        btnNoteFormat.setImageResource(R.drawable.ic_format_text);
+    }
+
+    /** Delegates to updateNoteFormatIcon() — kept for TextWatcher call sites. */
+    private void applyNoteFormatToolbarHighlight() {
+        updateNoteFormatIcon();
+    }
+
+    /**
+     * Renders note body text as a SpannableStringBuilder.
+     * Lines starting with "## " are stripped of the prefix and displayed bold + 15% larger.
+     */
+    private android.text.SpannableStringBuilder renderNoteBodySpanned(String text) {
+        if (text == null || text.isEmpty()) return new android.text.SpannableStringBuilder();
+        android.text.SpannableStringBuilder sb = new android.text.SpannableStringBuilder();
+        String[] lines = text.split("\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            String line      = lines[i];
+            int    lineStart = sb.length();
+            if (line.startsWith("## ")) {
+                String heading = line.substring(3);
+                sb.append(heading);
+                int lineEnd = sb.length();
+                sb.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD),
+                        lineStart, lineEnd, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                sb.setSpan(new android.text.style.RelativeSizeSpan(1.15f),
+                        lineStart, lineEnd, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+            } else {
+                sb.append(line);
+            }
+            if (i < lines.length - 1) sb.append('\n');
+        }
+        return sb;
     }
 
     // ── Field row builder ─────────────────────────────────────────────────────
@@ -1169,7 +1376,9 @@ public class DetailActivity extends BaseActivity {
             tvView.setSingleLine(true);
         }
         viewTexts[index] = tvView;
-        row.addView(tvView);
+        if (!(EntryType.CARD.equals(entryType) && index == 2)) {
+            row.addView(tvView);
+        }
 
         // ── EDIT text ─────────────────────────────────────────────────────────
         EditText etEdit = new EditText(this);
@@ -1200,35 +1409,141 @@ public class DetailActivity extends BaseActivity {
         if (index == 0) {
             etEdit.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.AllCaps()});
         }
+        // Card number field (Card type, index 2): FrameLayout with inline card type label, visible in both modes
+        if (EntryType.CARD.equals(entryType) && index == 2) {
+            etEdit.setInputType(InputType.TYPE_CLASS_PHONE);
+            etEdit.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(23)});
+
+            // FrameLayout wraps tvView + etEdit so label overlays inside the box
+            android.widget.FrameLayout cardFrame = new android.widget.FrameLayout(this);
+            LinearLayout.LayoutParams frameParams = new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+            cardFrame.setLayoutParams(frameParams);
+
+            // tvView inside frame — full width, extra right padding for label
+            android.widget.FrameLayout.LayoutParams tvFp = new android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT);
+            tvView.setLayoutParams(tvFp);
+            tvView.setPadding(dpToPx(12), dpToPx(12), dpToPx(52), dpToPx(12));
+            cardFrame.addView(tvView);
+
+            // etEdit inside frame — full width, extra right padding for label
+            android.widget.FrameLayout.LayoutParams etFp = new android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT);
+            etEdit.setLayoutParams(etFp);
+            etEdit.setPadding(dpToPx(12), dpToPx(12), dpToPx(52), dpToPx(12));
+            cardFrame.addView(etEdit);
+
+            // Card type label — overlaid inside box at right edge
+            TextView cardTypeLabel = new TextView(this);
+            cardTypeLabel.setTextSize(11f);
+            cardTypeLabel.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            cardTypeLabel.setTextColor(0xFF9E9E9E);
+            android.widget.FrameLayout.LayoutParams labelFp = new android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.CENTER_VERTICAL | Gravity.END);
+            labelFp.rightMargin = dpToPx(10);
+            cardTypeLabel.setLayoutParams(labelFp);
+            cardTypeLabel.setVisibility(View.GONE);
+            cardFrame.addView(cardTypeLabel);
+            cardTypeLabelView = cardTypeLabel;
+
+            row.addView(cardFrame);
+
+            etEdit.addTextChangedListener(new android.text.TextWatcher() {
+                private boolean formatting = false;
+                @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+                @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+                @Override public void afterTextChanged(android.text.Editable e) {
+                    if (formatting) return;
+                    formatting = true;
+                    String formatted = formatCardNumber(e.toString());
+                    e.replace(0, e.length(), formatted);
+                    formatting = false;
+                    // Update card type label
+                    String digits = e.toString().replace(" ", "");
+                    String cardType = detectCardType(digits);
+                    if (cardType != null) {
+                        cardTypeLabel.setText(cardType);
+                        cardTypeLabel.setVisibility(View.VISIBLE);
+                    } else {
+                        cardTypeLabel.setVisibility(View.GONE);
+                    }
+                    // Adjust CVV max length based on card type (AMEX = 4, others = 3)
+                    if (editViews[4] != null) {
+                        int cvvMax = "AMEX".equals(cardType) ? 4 : 3;
+                        editViews[4].setFilters(new android.text.InputFilter[]{
+                                new android.text.InputFilter.LengthFilter(cvvMax)});
+                    }
+                }
+            });
+        }
+        // Expiry field (Card type, index 3 = field4): phone input (allows / insertion), auto-insert / after MM.
+        // Max 5 chars: MM/YY
+        if (EntryType.CARD.equals(entryType) && index == 3) {
+            etEdit.setInputType(InputType.TYPE_CLASS_PHONE);
+            etEdit.setHint("MM/YY");
+            etEdit.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(5)});
+            etEdit.addTextChangedListener(new android.text.TextWatcher() {
+                private boolean formatting = false;
+                @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+                @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+                @Override public void afterTextChanged(android.text.Editable e) {
+                    if (formatting) return;
+                    formatting = true;
+                    String digits = e.toString().replace("/", "");
+                    String formatted = digits.length() > 2
+                            ? digits.substring(0, 2) + "/" + digits.substring(2)
+                            : digits;
+                    e.replace(0, e.length(), formatted);
+                    formatting = false;
+                }
+            });
+        }
+        // CVV (index 4): numeric keypad, max 3 digits. PIN (index 5): numeric keypad.
+        if (EntryType.CARD.equals(entryType) && index == 4) {
+            etEdit.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+            etEdit.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(3)});
+        }
+        if (EntryType.CARD.equals(entryType) && index == 5) {
+            etEdit.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        }
+        // Account Number (index 2) on Bank: numeric keypad only
+        if (EntryType.BANK.equals(entryType) && index == 2) {
+            etEdit.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        }
+        // PIN / Code (index 1) on PIN entry type: numeric keypad only
+        if (EntryType.PIN.equals(entryType) && index == 1) {
+            etEdit.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+        }
         etEdit.setVisibility(View.GONE);   // hidden until EDIT mode
         editViews[index] = etEdit;
-        row.addView(etEdit);
+        if (!(EntryType.CARD.equals(entryType) && index == 2)) {
+            row.addView(etEdit);
+        }
 
         // ── Secret toggle button (eye) ────────────────────────────────────────
         if (isSecret && !isNotes) {
-            // Always start closed/masked — applyModeUI() sets the correct state
-            ImageButton btnToggle = makeIconButton(R.drawable.ic_eye_off);
+            // Tap on view-mode box to reveal/hide secret value (no eye button)
             revealed[index] = false;
-            eyeButtons[index] = btnToggle;
-            btnToggle.setOnClickListener(v -> {
+            tvView.setOnClickListener(v -> {
+                if (isEditMode) return;
                 revealed[index] = !revealed[index];
-                // Swap icon: open eye when revealed, closed eye when masked
-                btnToggle.setImageResource(
-                        revealed[index] ? R.drawable.ic_eye : R.drawable.ic_eye_off);
-                if (isEditMode) {
-                    etEdit.setInputType(revealed[index]
-                            ? InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
-                            : InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-                    etEdit.setSelection(etEdit.getText().length());
-                } else {
-                    String raw = existingEntry != null
-                            ? existingEntry.getFieldByIndex(index + 1) : "";
-                    tvView.setText(revealed[index] ? raw : maskText(raw));
-                    tvView.setTextColor(getResources().getColor(
-                            raw.isEmpty() ? R.color.hint_color : R.color.input_text));
-                }
+                String raw = existingEntry != null
+                        ? existingEntry.getFieldByIndex(index + 1) : "";
+                // Card number: always display formatted with spaces when revealed
+                String display = (EntryType.CARD.equals(entryType) && index == 2)
+                        ? formatCardNumber(raw) : raw;
+                // Bank Account Number: show ●●● (N digits) when re-masked
+                String masked = (EntryType.BANK.equals(entryType) && index == 2)
+                        ? "●●● (" + raw.length() + " digits)" : maskText(raw);
+                tvView.setText(revealed[index] ? display : masked);
+                tvView.setTextColor(getResources().getColor(
+                        raw.isEmpty() ? R.color.hint_color : R.color.input_text));
             });
-            row.addView(btnToggle);
         }
 
         // ── Long-press to copy (VIEW mode only) ──────────────────────────────
@@ -1236,6 +1551,10 @@ public class DetailActivity extends BaseActivity {
         tvView.setOnLongClickListener(v -> {
             String text = existingEntry != null
                     ? existingEntry.getFieldByIndex(index + 1) : "";
+            // Card number: strip spaces before copying so clipboard gets clean digits
+            if (EntryType.CARD.equals(entryType) && index == 2) {
+                text = text.replace(" ", "");
+            }
             if (text.isEmpty()) {
                 Toast.makeText(this, "Nothing to copy", Toast.LENGTH_SHORT).show();
             } else {
@@ -1261,6 +1580,60 @@ public class DetailActivity extends BaseActivity {
     /** Sets the view-mode TextView, masking if the field is secret. */
     private void setViewText(int index, String value) {
         if (viewTexts[index] == null) return;
+        // Note body (Note type, index 6): render ## heading lines as bold spanned text
+        if (EntryType.NOTE.equals(entryType) && index == 6 && !value.isEmpty()) {
+            viewTexts[index].setText(renderNoteBodySpanned(value));
+            viewTexts[index].setTextColor(getResources().getColor(R.color.text_primary));
+            return;
+        }
+        // Card number (Card type, index 2): display formatted + update inline card type label
+        if (EntryType.CARD.equals(entryType) && index == 2) {
+            if (!value.isEmpty()) {
+                String formatted = formatCardNumber(value);
+                viewTexts[index].setText(secretFlags[index] ? maskText(formatted) : formatted);
+                viewTexts[index].setTextColor(getResources().getColor(R.color.input_text));
+            } else {
+                viewTexts[index].setText("—");
+                viewTexts[index].setTextColor(getResources().getColor(R.color.hint_color));
+            }
+            if (cardTypeLabelView != null) {
+                String digits = value.replace(" ", "");
+                String cardType = detectCardType(digits);
+                if (cardType != null) {
+                    cardTypeLabelView.setText(cardType);
+                    cardTypeLabelView.setVisibility(View.VISIBLE);
+                } else {
+                    cardTypeLabelView.setVisibility(View.GONE);
+                }
+            }
+            return;
+        }
+        // Expiry (Card type, index 3): show ⚠ Expired warning in view mode if past date
+        if (EntryType.CARD.equals(entryType) && index == 3 && !value.isEmpty()) {
+            boolean expired = false;
+            if (value.matches("^(0[1-9]|1[0-2])/[0-9]{2}$")) {
+                int month = Integer.parseInt(value.substring(0, 2));
+                int year  = 2000 + Integer.parseInt(value.substring(3));
+                java.util.Calendar now = java.util.Calendar.getInstance();
+                int curYear  = now.get(java.util.Calendar.YEAR);
+                int curMonth = now.get(java.util.Calendar.MONTH) + 1;
+                expired = (year < curYear) || (year == curYear && month < curMonth);
+            }
+            if (expired) {
+                viewTexts[index].setText(value + "  ⚠ Expired");
+                viewTexts[index].setTextColor(0xFFFF6F00); // amber warning
+            } else {
+                viewTexts[index].setText(value);
+                viewTexts[index].setTextColor(getResources().getColor(R.color.input_text));
+            }
+            return;
+        }
+        // Bank Account Number (index 2): show ●●● (N digits) when masked
+        if (EntryType.BANK.equals(entryType) && index == 2 && !value.isEmpty() && secretFlags[index]) {
+            viewTexts[index].setText("●●● (" + value.length() + " digits)");
+            viewTexts[index].setTextColor(getResources().getColor(R.color.input_text));
+            return;
+        }
         if (value.isEmpty()) {
             viewTexts[index].setText("—");
             viewTexts[index].setTextColor(getResources().getColor(R.color.hint_color));
@@ -1273,9 +1646,42 @@ public class DetailActivity extends BaseActivity {
     /** Returns ●●●●● masking string of the same length as the input. */
     private String maskText(String text) {
         if (text.isEmpty()) return "";
-        char[] mask = new char[text.length()];
-        java.util.Arrays.fill(mask, '●');
-        return new String(mask);
+        return "●●●●●";
+    }
+
+    /**
+     * Detects card network from first digits. Returns "VISA", "MASTERCARD", "AMEX",
+     * "DISCOVER", "JCB", or null if unknown.
+     */
+    private String detectCardType(String digits) {
+        if (digits.length() < 1) return null;
+        if (digits.startsWith("4"))                          return "VISA";
+        if (digits.length() >= 2) {
+            int two = Integer.parseInt(digits.substring(0, 2));
+            if (two >= 51 && two <= 55)                      return "MC";
+            if (two == 34 || two == 37)                      return "AMEX";
+            if (two == 35)                                   return "JCB";
+            if (two == 65)                                   return "DISC";
+        }
+        if (digits.length() >= 4 && digits.startsWith("6011")) return "DISC";
+        return null;
+    }
+
+    /**
+     * Formats a card number string for display: strips spaces then inserts a space
+     * after every 4 digits. E.g. "4532015112830366" → "4532 0151 1283 0366".
+     * Non-digit characters other than spaces are preserved as-is.
+     */
+    private String formatCardNumber(String raw) {
+        // Strip all existing spaces first
+        String digits = raw.replace(" ", "");
+        if (digits.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < digits.length(); i++) {
+            if (i > 0 && i % 4 == 0) sb.append(' ');
+            sb.append(digits.charAt(i));
+        }
+        return sb.toString();
     }
 
     // ── Save ──────────────────────────────────────────────────────────────────
@@ -1496,6 +1902,8 @@ public class DetailActivity extends BaseActivity {
     private ImageButton makeIconButton(int drawableRes) {
         ImageButton btn = new ImageButton(this);
         btn.setImageResource(drawableRes);
+        btn.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+        btn.setPadding(dpToPx(10), dpToPx(10), dpToPx(10), dpToPx(10));
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(dpToPx(44), dpToPx(44));
         p.leftMargin = dpToPx(4);
         btn.setLayoutParams(p);

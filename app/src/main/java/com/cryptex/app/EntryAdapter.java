@@ -11,7 +11,6 @@ import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
-import androidx.cardview.widget.CardView;
 import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -206,10 +205,13 @@ public class EntryAdapter extends RecyclerView.Adapter<EntryAdapter.ViewHolder> 
             holder.ivChevron.setVisibility(View.VISIBLE);
         }
 
-        // ── Selected card highlight ───────────────────────────────────────────
-        holder.card.setCardBackgroundColor(ContextCompat.getColor(
-                holder.card.getContext(),
-                isSelected ? R.color.selection_highlight : R.color.card_bg));
+        // ── Selected row highlight ───────────────────────────────────────
+        if (isSelected) {
+            holder.card.setBackgroundColor(ContextCompat.getColor(
+                    holder.card.getContext(), R.color.selection_highlight));
+        } else {
+            holder.card.setBackground(null);
+        }
 
         // ── Click behaviour ───────────────────────────────────────────────────
         holder.itemView.setOnClickListener(v -> {
@@ -239,7 +241,7 @@ public class EntryAdapter extends RecyclerView.Adapter<EntryAdapter.ViewHolder> 
 
         ViewHolder(View view) {
             super(view);
-            card               = (CardView) view;
+            card               = view;
             tvTitle            = view.findViewById(R.id.tvTitle);
             tvSubtitle         = view.findViewById(R.id.tvSubtitle);
             tvIcon             = view.findViewById(R.id.tvIcon);

@@ -20,14 +20,6 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.biometric.BiometricManager;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
-import com.tom_roush.pdfbox.android.PDFBoxResourceLoader;
-import com.tom_roush.pdfbox.pdmodel.PDDocument;
-import com.tom_roush.pdfbox.pdmodel.PDPage;
-import com.tom_roush.pdfbox.pdmodel.PDPageContentStream;
-import com.tom_roush.pdfbox.pdmodel.common.PDRectangle;
-import com.tom_roush.pdfbox.pdmodel.encryption.AccessPermission;
-import com.tom_roush.pdfbox.pdmodel.encryption.StandardProtectionPolicy;
-import com.tom_roush.pdfbox.pdmodel.font.PDType1Font;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -41,37 +33,19 @@ public class SettingsActivity extends BaseActivity {
 
     private StorageHelper storage;
 
-    // True when this activity was opened only to host a PDF export from TypeListActivity
-    // In this mode the full Settings UI is not inflated — finish() after share sheet
-    private boolean isPdfOnlyMode = false;
-
-    // Pending password — held between password dialog and SAF picker callback
+    // Pending password â€” held between password dialog and SAF picker callback
     private String pendingExportPassword = null;
 
-    // SAF launcher: full export — user picks location, filename pre-set to cryptex_backup.cxb
+    // SAF launcher: full export â€” user picks location, filename pre-set to cryptex_backup.cxb
     private final ActivityResultLauncher<Intent> exportFilePicker =
             registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
                 if (result.getResultCode() == RESULT_OK && result.getData() != null) {
                     Uri uri = result.getData().getData();
                     if (uri != null && pendingExportPassword != null) {
-                        // Take persistable permission HERE on UI thread — most reliable point
+                        // Take persistable permission HERE on UI thread â€” most reliable point
                         takePersistablePermission(uri);
                         performExportToUri(uri, pendingExportPassword, false);
                         pendingExportPassword = null;
-                    }
-                }
-            });
-
-    // SAF launcher: update backup — reuse stored password, no dialog
-    private final ActivityResultLauncher<Intent> updateFilePicker =
-            registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
-                if (result.getResultCode() == RESULT_OK && result.getData() != null) {
-                    Uri uri = result.getData().getData();
-                    String storedPass = storage.getBackupPassword();
-                    if (uri != null && storedPass != null) {
-                        // Take persistable permission HERE on UI thread — most reliable point
-                        takePersistablePermission(uri);
-                        performExportToUri(uri, storedPass, true);
                     }
                 }
             });
@@ -108,39 +82,14 @@ public class SettingsActivity extends BaseActivity {
 
         storage = StorageHelper.getInstance(this);
 
-        // If launched from TypeListActivity with specific entry IDs → skip to PDF password dialog
-        ArrayList<String> pdfEntryIds = getIntent().getStringArrayListExtra("pdf_entry_ids");
-        if (pdfEntryIds != null && !pdfEntryIds.isEmpty()) {
-            isPdfOnlyMode = true;
-            List<Entry> selected = new java.util.ArrayList<>();
-            for (Entry e : storage.loadEntries()) {
-                if (pdfEntryIds.contains(e.getId())) selected.add(e);
-            }
-            if (!selected.isEmpty()) {
-                new android.os.Handler().postDelayed(() -> showPdfPasswordDialog(selected, true), 200);
-            } else {
-                finish();
-            }
-            return; // skip wiring all the Settings UI — this activity is just a PDF host
-        }
-
         findViewById(R.id.btnBack).setOnClickListener(v -> finish());
         findViewById(R.id.cardChangePin).setOnClickListener(v -> showCurrentPinDialog());
-        findViewById(R.id.cardExport).setOnClickListener(v -> showExportPasswordDialog());
-        findViewById(R.id.cardExportPdf).setOnClickListener(v -> showPdfExportWarning());
-        findViewById(R.id.cardUpdateBackup).setOnClickListener(v -> launchUpdateBackup());
+        findViewById(R.id.cardUpdateBackup).setOnClickListener(v -> launchBackup());
         findViewById(R.id.cardImport).setOnClickListener(v ->
                 importFilePicker.launch(new String[]{"application/octet-stream", "*/*"}));
-        findViewById(R.id.cardAutoLock).setOnClickListener(v -> showAutoLockDialog());
-        findViewById(R.id.cardSecurityQ).setOnClickListener(v -> showSecurityQDialog());
+        findViewById(R.id.cardSecurityQ).setOnClickListener(v -> showPinThenSecurityQ());
         findViewById(R.id.cardManageCategories).setOnClickListener(v ->
                 startActivity(new android.content.Intent(this, ManageCategoriesActivity.class)));
-
-        // Auto-backup toggle
-        Switch switchAutoBackup = findViewById(R.id.switchAutoBackup);
-        switchAutoBackup.setChecked(storage.isAutoBackupEnabled());
-        switchAutoBackup.setOnCheckedChangeListener((btn, isChecked) ->
-                storage.setAutoBackupEnabled(isChecked));
 
         // v17: Biometric toggle
         Switch switchBiometric = findViewById(R.id.switchBiometric);
@@ -168,7 +117,6 @@ public class SettingsActivity extends BaseActivity {
             }
         });
 
-        updateAutoLockValue();
         updateSecurityQValue();
         updateBackupCard();
 
@@ -180,7 +128,7 @@ public class SettingsActivity extends BaseActivity {
         } catch (Exception ignored) {}
     }
 
-    // v12: Auto-lock gap fix — save/check timestamp in SettingsActivity
+    // v12: Auto-lock gap fix â€” save/check timestamp in SettingsActivity
     @Override
     protected void onPause() {
         super.onPause();
@@ -190,32 +138,25 @@ public class SettingsActivity extends BaseActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (isPdfOnlyMode) return; // PDF-only mode — no auto-lock check, no card refresh
         if (checkAndHandleAutoLock()) return;
         updateBackupCard();
     }
 
-    // ── UPDATE BACKUP CARD ───────────────────────────────────────────────────
+    // â”€â”€ UPDATE BACKUP CARD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private void updateBackupCard() {
-        View card = findViewById(R.id.cardUpdateBackup);
         TextView tvLast = findViewById(R.id.tvLastBackup);
-        View cardAutoBackup = findViewById(R.id.cardAutoBackup);
         long lastTime = storage.getLastExportTime();
         if (lastTime > 0 && storage.hasBackupPassword()) {
-            card.setVisibility(View.VISIBLE);
             String formatted = new SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault())
                     .format(new Date(lastTime));
             tvLast.setText(getString(R.string.last_backup, formatted));
-            // Show auto-backup toggle only after at least one export
-            cardAutoBackup.setVisibility(View.VISIBLE);
         } else {
-            card.setVisibility(View.GONE);
-            cardAutoBackup.setVisibility(View.GONE);
+            tvLast.setText("");
         }
     }
 
-    // ── EXPORT ───────────────────────────────────────────────────────────────
+    // â”€â”€ EXPORT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private void showExportPasswordDialog() {
         List<Entry> entries = storage.loadEntries();
@@ -262,7 +203,7 @@ public class SettingsActivity extends BaseActivity {
             exportDialog.dismiss();
             // Store password for later re-use by Update Backup
             pendingExportPassword = pass;
-            // Open SAF picker — fixed filename cryptex_backup.cxb
+            // Open SAF picker â€” fixed filename cryptex_backup.cxb
             Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
             intent.setType("application/octet-stream");
             intent.putExtra(Intent.EXTRA_TITLE, "cryptex_backup.cxb");
@@ -270,22 +211,65 @@ public class SettingsActivity extends BaseActivity {
         });
     }
 
-    private void launchUpdateBackup() {
-        if (!storage.hasBackupPassword()) {
-            Toast.makeText(this, getString(R.string.update_backup_no_export), Toast.LENGTH_SHORT).show();
+    private void launchBackup() {
+        List<Entry> entries = storage.loadEntries();
+        if (entries.isEmpty()) {
+            Toast.makeText(this, "No entries to back up.", Toast.LENGTH_SHORT).show();
             return;
         }
-        // ACTION_OPEN_DOCUMENT (not ACTION_CREATE_DOCUMENT) is used here intentionally.
-        // URIs from ACTION_OPEN_DOCUMENT are always fully persistable across app restarts —
-        // Android guarantees this. URIs from ACTION_CREATE_DOCUMENT may lose their
-        // persistable write permission after app restart on some OEM devices (Samsung,
-        // Xiaomi, etc.). By asking the user to pick the existing backup file here,
-        // we store an ACTION_OPEN_DOCUMENT URI which auto-backup can reliably write to.
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        intent.setType("*/*");
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        updateFilePicker.launch(intent);
-    }
+        String savedUri = storage.getBackupUri();
+        if (savedUri == null || !storage.hasBackupPassword()) {
+            // First time â€” ask for password then pick save location
+            showExportPasswordDialog();
+            return;
+        }
+        // Existing backup known — offer two options
+        LinearLayout menu = new LinearLayout(this);
+        menu.setOrientation(LinearLayout.VERTICAL);
+        int menuPad = dp(20);
+        String[] options = {"Update existing file", "Save to new location"};
+        AlertDialog[] dlgRef = {null};
+        for (int i = 0; i < options.length; i++) {
+            TextView item = new TextView(this);
+            item.setText(options[i]);
+            item.setTextColor(getResources().getColor(R.color.text_primary));
+            item.setTextSize(16f);
+            item.setPadding(menuPad, dp(14), menuPad, dp(14));
+            android.util.TypedValue ripple = new android.util.TypedValue();
+            getTheme().resolveAttribute(android.R.attr.selectableItemBackground, ripple, true);
+            item.setBackgroundResource(ripple.resourceId);
+            item.setClickable(true);
+            item.setFocusable(true);
+            final int idx = i;
+            item.setOnClickListener(v -> {
+                if (dlgRef[0] != null) dlgRef[0].dismiss();
+                if (idx == 0) {
+                    Uri uri = Uri.parse(savedUri);
+                    String pass = storage.getBackupPassword();
+                    performExportToUri(uri, pass, true);
+                } else {
+                    showExportPasswordDialog();
+                }
+            });
+            menu.addView(item);
+            if (i < options.length - 1) {
+                View div = new View(this);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT, 1);
+                lp.setMarginStart(menuPad);
+                div.setLayoutParams(lp);
+                div.setBackgroundColor(getResources().getColor(R.color.divider));
+                menu.addView(div);
+            }
+        }
+        AlertDialog backupDlg = new MaterialAlertDialogBuilder(this)
+                .setTitle("Backup")
+                .setView(menu)
+                .setNegativeButton("Cancel", null)
+                .create();
+        dlgRef[0] = backupDlg;
+        backupDlg.show();
+ }
 
     private void performExportToUri(Uri uri, String password, boolean isUpdate) {
         List<Entry> entries = storage.loadEntries();
@@ -333,7 +317,7 @@ public class SettingsActivity extends BaseActivity {
         }).start();
     }
 
-    // ── IMPORT ───────────────────────────────────────────────────────────────
+    // â”€â”€ IMPORT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private void showImportPasswordDialog(Uri uri) {
         LinearLayout layout = new LinearLayout(this);
@@ -383,16 +367,16 @@ public class SettingsActivity extends BaseActivity {
                 List<Entry> imported;
 
                 if (BackupCrypto.isZipBackup(fileBytes)) {
-                    // ── v24 ZIP format ──────────────────────────────────────────
+                    // â”€â”€ v24 ZIP format â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                     BackupCrypto.ZipContent zipContent = BackupCrypto.decryptZip(fileBytes, password);
                     imported = storage.importFromJson(zipContent.json);
                     if (imported == null) throw new Exception("Corrupted backup data.");
                 } else {
-                    // ── Legacy blob format (pre-v24) ────────────────────────────
+                    // â”€â”€ Legacy blob format (pre-v24) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                     String json = BackupCrypto.decrypt(fileBytes, password);
                     imported = storage.importFromJson(json);
                     // importFromJson() auto-migrates old attachmentName/Data fields
-                    // (Base64 → AttachmentStore files) via StorageHelper.entryFromJson()
+                    // (Base64 â†’ AttachmentStore files) via StorageHelper.entryFromJson()
                     if (imported == null) throw new Exception("Corrupted backup data.");
                 }
 
@@ -443,40 +427,6 @@ public class SettingsActivity extends BaseActivity {
             }
         }).start();
     }
-
-    // ── V7: Auto-lock ───────────────────────────────────────────────────────
-    private void updateAutoLockValue() {
-        TextView tv = findViewById(R.id.tvAutoLockValue);
-        int sec = storage.getAutoLockTimeout();
-        String txt;
-        if (sec <= 0) txt = getString(R.string.auto_lock_off);
-        else if (sec < 60) txt = getString(R.string.auto_lock_seconds, sec);
-        else txt = getString(R.string.auto_lock_minutes, sec / 60);
-        tv.setText(txt);
-    }
-    private void showAutoLockDialog() {
-        final String[] options = {
-                getString(R.string.auto_lock_off),
-                getString(R.string.auto_lock_10s),
-                getString(R.string.auto_lock_30s),
-                getString(R.string.auto_lock_1m),
-                getString(R.string.auto_lock_5m)
-        };
-        final int[] values = {0, 10, 30, 60, 300};
-        int current = storage.getAutoLockTimeout();
-        int checked = 0;
-        for (int i = 0; i < values.length; i++) if (current == values[i]) checked = i;
-        new MaterialAlertDialogBuilder(this)
-                .setTitle(R.string.auto_lock)
-                .setSingleChoiceItems(options, checked, (d, which) -> {
-                    storage.setAutoLockTimeout(values[which]);
-                    updateAutoLockValue();
-                    d.dismiss();
-                })
-                .setNegativeButton(R.string.cancel, null)
-                .show();
-    }
-    // ── V7: Security Q&A ─────────────────────────────────────────────────────
     private void updateSecurityQValue() {
         TextView tv = findViewById(R.id.tvSecurityQValue);
         int idx = storage.getSecurityQuestionIndex();
@@ -489,6 +439,33 @@ public class SettingsActivity extends BaseActivity {
             tv.setText(R.string.security_question_not_set);
         }
     }
+    private void showPinThenSecurityQ() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(20);
+        layout.setPadding(pad, dp(8), pad, 0);
+        EditText etPin = makePinInput();
+        etPin.setHint("Current PIN");
+        layout.addView(etPin);
+        AlertDialog dialog = new MaterialAlertDialogBuilder(this)
+                .setTitle("Confirm PIN")
+                .setView(layout)
+                .setPositiveButton("Continue", null)
+                .setNegativeButton("Cancel", null)
+                .create();
+        showKeyboardFor(dialog, etPin);
+        dialog.show();
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            if (!storage.checkPin(etPin.getText().toString().trim())) {
+                etPin.setError("Incorrect PIN");
+                etPin.requestFocus();
+                return;
+            }
+            dialog.dismiss();
+            showSecurityQDialog();
+        });
+    }
+
     private void showSecurityQDialog() {
         final String[] questions = ForgotPinActivity.QUESTIONS;
         int current = storage.getSecurityQuestionIndex();
@@ -528,7 +505,7 @@ public class SettingsActivity extends BaseActivity {
         tvQLabel.setPadding(0, 0, 0, dp(4));
         layout.addView(tvQLabel);
         EditText etQuestion = new EditText(this);
-        etQuestion.setHint("Type your question…");
+        etQuestion.setHint("Type your questionâ€¦");
         etQuestion.setText(storage.getCustomSecurityQuestionText());
         layout.addView(etQuestion);
         AlertDialog dlg = new MaterialAlertDialogBuilder(this)
@@ -563,7 +540,7 @@ public class SettingsActivity extends BaseActivity {
         AlertDialog dlg = new MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.security_question)
                 .setView(layout)
-                .setPositiveButton(R.string.save, null) // null — handled below to prevent auto-dismiss
+                .setPositiveButton(R.string.save, null) // null â€” handled below to prevent auto-dismiss
                 .setNegativeButton(R.string.cancel, null)
                 .create();
         dlg.show();
@@ -584,11 +561,11 @@ public class SettingsActivity extends BaseActivity {
         });
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     /**
      * Takes persistable read+write permission for a SAF URI.
-     * Must be called on the UI thread immediately after the picker returns the URI —
+     * Must be called on the UI thread immediately after the picker returns the URI â€”
      * this is the only reliable moment Android guarantees the permission can be taken.
      * Calling it inside a background thread or later is unreliable and can silently fail.
      */
@@ -631,7 +608,7 @@ public class SettingsActivity extends BaseActivity {
         return Math.round(dp * getResources().getDisplayMetrics().density);
     }
 
-    // ── Change PIN Flow ───────────────────────────────────────────────────────
+    // â”€â”€ Change PIN Flow â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private EditText makePinInput() {
         EditText et = new EditText(this);
@@ -724,7 +701,7 @@ public class SettingsActivity extends BaseActivity {
         });
     }
 
-    // ── v17: Biometric enable confirmation ────────────────────────────────────
+    // â”€â”€ v17: Biometric enable confirmation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private void showBiometricEnableConfirm(Switch switchBiometric) {
         EditText etPin = makePinInput();

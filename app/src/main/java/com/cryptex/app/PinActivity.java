@@ -162,7 +162,7 @@ public class PinActivity extends BaseActivity {
             } else {
                 if (pin.equals(tempPin)) {
                     storage.savePin(pin);
-                    goToMain();
+                    offerBiometricSetup();
                 } else {
                     // Mismatch: shake + red dots, restart setup
                     shakeAndRed(() -> {
@@ -317,6 +317,29 @@ public class PinActivity extends BaseActivity {
 
     private void launchForgotPin() {
         startActivity(new Intent(this, ForgotPinActivity.class));
+    }
+
+    // ── Biometric setup offer (first-run only) ────────────────────────────
+
+    private void offerBiometricSetup() {
+        BiometricManager bm = BiometricManager.from(this);
+        boolean supported = bm.canAuthenticate(
+                BiometricManager.Authenticators.BIOMETRIC_WEAK)
+                == BiometricManager.BIOMETRIC_SUCCESS;
+        if (!supported) {
+            goToMain();
+            return;
+        }
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle("Enable Fingerprint?")
+                .setMessage("Use your fingerprint to unlock Cryptex instead of typing your PIN each time.")
+                .setPositiveButton("Enable", (d, w) -> {
+                    storage.setBiometricEnabled(true);
+                    goToMain();
+                })
+                .setNegativeButton("Not Now", (d, w) -> goToMain())
+                .setCancelable(false)
+                .show();
     }
 
     private void goToMain() {

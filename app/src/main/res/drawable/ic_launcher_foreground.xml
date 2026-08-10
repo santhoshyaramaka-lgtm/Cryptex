@@ -6,32 +6,17 @@
     android:viewportWidth="1024"
     android:viewportHeight="1024">
 
-    <!-- Vault Door + Chrome C — scaled up to r=310 (was r=230) -->
+    <!-- Vault Door + Chrome C — outer ring and bolts removed, C scaled 1.4x -->
 
-    <!-- 1. OUTER VAULT RING r=310 -->
+    <!-- 2. VAULT DOOR FACE r=430 -->
     <path
-        android:fillColor="#37474F"
-        android:pathData="M512,512 m-310,0 a310,310 0 1,0 620,0 a310,310 0 1,0 -620,0"/>
-    <path
-        android:fillColor="#00000000"
-        android:strokeColor="#3300BCD4"
-        android:strokeWidth="43"
-        android:pathData="M512,512 m-310,0 a310,310 0 1,0 620,0 a310,310 0 1,0 -620,0"/>
-    <path
-        android:fillColor="#00000000"
-        android:strokeColor="#00BCD4"
-        android:strokeWidth="24"
-        android:pathData="M512,512 m-310,0 a310,310 0 1,0 620,0 a310,310 0 1,0 -620,0"/>
-
-    <!-- 2. VAULT DOOR FACE r=267 -->
-    <path
-        android:pathData="M512,512 m-267,0 a267,267 0 1,0 534,0 a267,267 0 1,0 -534,0">
+        android:pathData="M512,512 m-430,0 a430,430 0 1,0 860,0 a430,430 0 1,0 -860,0">
         <aapt:attr name="android:fillColor">
             <gradient
                 android:type="radial"
                 android:centerX="512"
                 android:centerY="512"
-                android:gradientRadius="267">
+                android:gradientRadius="430">
                 <item android:offset="0"   android:color="#546E7A"/>
                 <item android:offset="0.6" android:color="#37474F"/>
                 <item android:offset="1"   android:color="#263238"/>
@@ -39,17 +24,17 @@
         </aapt:attr>
     </path>
 
-    <!-- 3. INNER ACCENT RING r=209 -->
+    <!-- 3. INNER ACCENT RING r=335 -->
     <path
         android:fillColor="#00000000"
         android:strokeColor="#2600E5FF"
         android:strokeWidth="30"
-        android:pathData="M512,512 m-209,0 a209,209 0 1,0 418,0 a209,209 0 1,0 -418,0"/>
+        android:pathData="M512,512 m-335,0 a335,335 0 1,0 670,0 a335,335 0 1,0 -670,0"/>
     <path
         android:fillColor="#00000000"
         android:strokeColor="#00ACC1"
         android:strokeWidth="17"
-        android:pathData="M512,512 m-209,0 a209,209 0 1,0 418,0 a209,209 0 1,0 -418,0"/>
+        android:pathData="M512,512 m-335,0 a335,335 0 1,0 670,0 a335,335 0 1,0 -670,0"/>
 
     <!-- 4. KEYHOLE - positioned at C gap entrance -->
     <path
@@ -61,28 +46,20 @@
         android:fillColor="#FFFFFF"
         android:pathData="M618,530 L632,530 Q640,530 640,538 L640,578 Q640,586 632,586 L618,586 Q610,586 610,578 L610,538 Q610,530 618,530 Z"/>
 
-    <!-- 5. BOLTS - 4 cardinal at r=310, bright gold -->
-    <path android:fillColor="#FFD700" android:strokeColor="#FF8F00" android:strokeWidth="7"
-        android:pathData="M512,202 m-30,0 a30,30 0 1,0 60,0 a30,30 0 1,0 -60,0"/>
-    <path android:fillColor="#FFD700" android:strokeColor="#FF8F00" android:strokeWidth="7"
-        android:pathData="M512,822 m-30,0 a30,30 0 1,0 60,0 a30,30 0 1,0 -60,0"/>
-    <path android:fillColor="#FFD700" android:strokeColor="#FF8F00" android:strokeWidth="7"
-        android:pathData="M202,512 m-30,0 a30,30 0 1,0 60,0 a30,30 0 1,0 -60,0"/>
-    <path android:fillColor="#FFD700" android:strokeColor="#FF8F00" android:strokeWidth="7"
-        android:pathData="M822,512 m-30,0 a30,30 0 1,0 60,0 a30,30 0 1,0 -60,0"/>
 
-    <!-- 6. CHROME C -->
+
+    <!-- 6. CHROME C — scaled 1.4x from center -->
     <group android:translateX="10" android:translateY="10">
-        <path android:fillColor="#21000000" android:pathData="M526.6,698.1 Q487.7,698.1 453.9,685.6 Q420.0,673.0 394.8,649.1 Q370.2,625.7 356.0,591.2 Q341.8,556.7 341.8,515.4 Q341.8,474.3 356.1,439.3 Q370.4,404.3 396.3,378.7 Q421.7,353.5 457.3,339.7 Q493.0,325.9 533.5,325.9 Q562.9,325.9 587.1,333.0 Q611.2,340.1 627.9,349.0 L643.3,335.3 L665.0,335.3 L667.3,464.3 L645.3,464.3 Q626.7,405.3 600.5,377.7 Q574.4,350.0 536.8,350.0 Q490.0,350.0 465.6,391.2 Q441.2,432.4 441.2,506.9 Q441.2,549.0 449.5,578.7 Q457.8,608.5 471.3,626.7 Q485.7,645.6 505.4,654.4 Q525.1,663.3 549.0,663.3 Q583.8,663.3 611.1,644.3 Q638.4,625.4 660.8,587.1 L682.2,600.0 Q671.5,621.9 657.8,639.2 Q644.1,656.5 626.2,669.0 Q606.5,682.7 582.7,690.4 Q558.9,698.1 526.6,698.1 Z"/>
+        <path android:fillColor="#21000000" android:pathData="M532.4,772.5 Q478.0,772.5 430.7,755.0 Q383.2,737.4 347.9,703.9 Q313.5,671.2 293.6,622.9 Q273.7,574.6 273.7,516.8 Q273.7,459.2 293.7,410.2 Q313.8,361.2 350.0,325.4 Q385.6,290.1 435.4,270.8 Q485.4,251.5 542.1,251.5 Q583.3,251.5 617.1,261.4 Q650.9,271.3 674.3,283.8 L695.8,264.6 L726.2,264.6 L729.4,445.2 L698.6,445.2 Q672.6,362.6 635.9,324.0 Q599.4,285.2 546.7,285.2 Q481.2,285.2 447.0,342.9 Q412.9,400.6 412.9,504.9 Q412.9,563.8 424.5,605.4 Q436.1,647.1 455.0,672.6 Q475.2,699.0 502.8,711.4 Q530.3,723.8 563.8,723.8 Q612.5,723.8 650.7,697.2 Q689.0,670.8 720.3,617.1 L750.3,635.2 Q735.3,665.9 716.1,690.1 Q696.9,714.3 671.9,731.8 Q644.3,751.0 611.0,761.8 Q577.7,772.5 532.4,772.5 Z"/>
     </group>
-    <path android:pathData="M526.6,698.1 Q487.7,698.1 453.9,685.6 Q420.0,673.0 394.8,649.1 Q370.2,625.7 356.0,591.2 Q341.8,556.7 341.8,515.4 Q341.8,474.3 356.1,439.3 Q370.4,404.3 396.3,378.7 Q421.7,353.5 457.3,339.7 Q493.0,325.9 533.5,325.9 Q562.9,325.9 587.1,333.0 Q611.2,340.1 627.9,349.0 L643.3,335.3 L665.0,335.3 L667.3,464.3 L645.3,464.3 Q626.7,405.3 600.5,377.7 Q574.4,350.0 536.8,350.0 Q490.0,350.0 465.6,391.2 Q441.2,432.4 441.2,506.9 Q441.2,549.0 449.5,578.7 Q457.8,608.5 471.3,626.7 Q485.7,645.6 505.4,654.4 Q525.1,663.3 549.0,663.3 Q583.8,663.3 611.1,644.3 Q638.4,625.4 660.8,587.1 L682.2,600.0 Q671.5,621.9 657.8,639.2 Q644.1,656.5 626.2,669.0 Q606.5,682.7 582.7,690.4 Q558.9,698.1 526.6,698.1 Z">
+    <path android:pathData="M532.4,772.5 Q478.0,772.5 430.7,755.0 Q383.2,737.4 347.9,703.9 Q313.5,671.2 293.6,622.9 Q273.7,574.6 273.7,516.8 Q273.7,459.2 293.7,410.2 Q313.8,361.2 350.0,325.4 Q385.6,290.1 435.4,270.8 Q485.4,251.5 542.1,251.5 Q583.3,251.5 617.1,261.4 Q650.9,271.3 674.3,283.8 L695.8,264.6 L726.2,264.6 L729.4,445.2 L698.6,445.2 Q672.6,362.6 635.9,324.0 Q599.4,285.2 546.7,285.2 Q481.2,285.2 447.0,342.9 Q412.9,400.6 412.9,504.9 Q412.9,563.8 424.5,605.4 Q436.1,647.1 455.0,672.6 Q475.2,699.0 502.8,711.4 Q530.3,723.8 563.8,723.8 Q612.5,723.8 650.7,697.2 Q689.0,670.8 720.3,617.1 L750.3,635.2 Q735.3,665.9 716.1,690.1 Q696.9,714.3 671.9,731.8 Q644.3,751.0 611.0,761.8 Q577.7,772.5 532.4,772.5 Z">
         <aapt:attr name="android:fillColor">
             <gradient
                 android:type="linear"
-                android:startX="341"
-                android:startY="325"
-                android:endX="682"
-                android:endY="698">
+                android:startX="272.6"
+                android:startY="250.2"
+                android:endX="750.0"
+                android:endY="772.4">
                 <item android:offset="0"    android:color="#707070"/>
                 <item android:offset="0.35" android:color="#FFFFFF"/>
                 <item android:offset="0.65" android:color="#D0D0D0"/>
