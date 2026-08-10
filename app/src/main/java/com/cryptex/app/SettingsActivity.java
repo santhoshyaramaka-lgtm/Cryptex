@@ -120,19 +120,6 @@ public class SettingsActivity extends BaseActivity {
         updateSecurityQValue();
         updateBackupCard();
 
-        // Backup & Data â€” expand/collapse toggle
-        LinearLayout sectionBackupHeader = findViewById(R.id.sectionBackupHeader);
-        LinearLayout groupBackup = findViewById(R.id.groupBackup);
-        android.widget.ImageView ivBackupArrow = findViewById(R.id.ivBackupArrow);
-        final boolean[] backupExpanded = {false};
-        sectionBackupHeader.setOnClickListener(v -> {
-            backupExpanded[0] = !backupExpanded[0];
-            groupBackup.setVisibility(backupExpanded[0] ? View.VISIBLE : View.GONE);
-            ivBackupArrow.setImageResource(
-                    backupExpanded[0] ? R.drawable.ic_arrow_up : R.drawable.ic_arrow_down);
-        });
-
-
         // Set version label dynamically from build
         try {
             String vn = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
@@ -653,7 +640,7 @@ public class SettingsActivity extends BaseActivity {
     }
 
     private void showCurrentPinDialog() {
-        // Single dialog with all 3 fields â€” keyboard opens once and stays open
+        // Single dialog with all 3 fields — keyboard opens once and stays open
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         int pad = dp(20);
@@ -741,6 +728,353 @@ public class SettingsActivity extends BaseActivity {
                 .create();
         showKeyboardFor(dialog, etPin);
         dialog.show();
+    }
+
+    // ── v17: PDF Export ───────────────────────────────────────────────────────
+
+    private void showPdfExportWarning() {
+        List<Entry> allEntries = storage.loadEntries();
+        // Exclude archived entries from PDF export
+        // Also strip attachment data — PDF never uses it, no point holding it in RAM
+        List<Entry> activeEntries = new java.util.ArrayList<>();
+        for (Entry e : allEntries) {
+            if (!e.isArchived()) {
+                activeEntries.add(e);
+            }
+        }
+        if (activeEntries.isEmpty()) {
+            Toast.makeText(this, getString(R.string.pdf_no_entries), Toast.LENGTH_SHORT).show();
+            return;
+        }
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(getString(R.string.export_pdf))
+                .setMessage(getString(R.string.export_pdf_warning))
+                .setPositiveButton("Continue →", (d, w) -> showPdfCategoryPicker(activeEntries))
+                .setNegativeButton(getString(R.string.cancel), null)
+                .show();
+    }
+
+    private void showPdfCategoryPicker(List<Entry> activeEntries) {
+        // Only show types that have at least one active entry (built-in, excludes checklist)
+        final String[] allTypes = EntryType.ALL_TYPES;
+
+        // Build list of types that actually have entries (excludes checklist — not rendered in PDF)
+        final java.util.List<String> availableTypes = new java.util.ArrayList<>();
+        for (String t : allTypes) {
+            if (EntryType.CHECKLIST.equals(t)) continue; // checklist items not exported in PDF
+            for (Entry e : activeEntries) {
+                if (t.equals(e.getType())) { availableTypes.add(t); break; }
+            }
+        }
+
+        // Edge case: all active entries are checklist type (not exported in PDF)
+        if (availableTypes.isEmpty()) {
+            Toast.makeText(this, getString(R.string.pdf_no_entries), Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Build display labels with entry counts
+        final CharSequence[] labels = new CharSequence[availableTypes.size()];
+        for (int i = 0; i < availableTypes.size(); i++) {
+            String t = availableTypes.get(i);
+            int count = 0;
+            for (Entry e : activeEntries) if (t.equals(e.getType())) count++;
+            labels[i] = EntryType.getDisplayName(t) + "  (" + count + ")";
+        }
+
+        // All checked by default
+        final boolean[] checked = new boolean[availableTypes.size()];
+        java.util.Arrays.fill(checked, true);
+
+        AlertDialog dlg = new MaterialAlertDialogBuilder(this)
+                .setTitle("Select Categories")
+                .setMultiChoiceItems(labels, checked, (d, which, isChecked) -> checked[which] = isChecked)
+                .setPositiveButton("Next →", null)
+                .setNegativeButton(getString(R.string.cancel), null)
+                .create();
+
+        dlg.show();
+
+        dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            // Build filtered entry list based on selected categories
+            List<Entry> filtered = new java.util.ArrayList<>();
+            for (int i = 0; i < availableTypes.size(); i++) {
+                if (checked[i]) {
+                    String t = availableTypes.get(i);
+                    for (Entry e : activeEntries) if (t.equals(e.getType())) filtered.add(e);
+                }
+            }
+            if (filtered.isEmpty()) {
+                Toast.makeText(this, "Please select at least one category.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            dlg.dismiss();
+            showPdfPasswordDialog(filtered, true);
+        });
+    }
+
+    private void showPdfPasswordDialog(List<Entry> entries, boolean textOnly) {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(20);
+        layout.setPadding(pad, dp(8), pad, 0);
+
+        EditText etPass = makePasswordInput(getString(R.string.pdf_password_hint));
+        EditText etConfirm = makePasswordInput(getString(R.string.pdf_password_confirm_hint));
+        layout.addView(etPass);
+        layout.addView(etConfirm);
+
+        AlertDialog dlg = new MaterialAlertDialogBuilder(this)
+                .setTitle(getString(R.string.pdf_password_title))
+                .setView(layout)
+                .setPositiveButton(getString(R.string.generate_pdf), null)
+                .setNegativeButton(getString(R.string.cancel), (d, w) -> { if (isPdfOnlyMode) finish(); })
+                .setOnCancelListener(d -> { if (isPdfOnlyMode) finish(); })
+                .create();
+        dlg.show();
+        dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String pass    = etPass.getText().toString();
+            String confirm = etConfirm.getText().toString();
+            if (pass.isEmpty()) {
+                etPass.setError(getString(R.string.pdf_password_empty));
+                return;
+            }
+            if (!pass.equals(confirm)) {
+                etConfirm.setError(getString(R.string.pdf_password_mismatch));
+                return;
+            }
+            dlg.dismiss();
+            generatePdf(entries, pass, textOnly);
+        });
+    }
+
+    private void generatePdf(List<Entry> entries, String password, boolean textOnly) {
+        AlertDialog progress = new MaterialAlertDialogBuilder(this)
+                .setTitle(getString(R.string.pdf_generating))
+                .setView(makeProgressBar())
+                .setCancelable(false)
+                .create();
+        progress.show();
+
+        new Thread(() -> {
+            try {
+                // Initialise PdfBox Android resources (safe to call multiple times)
+                PDFBoxResourceLoader.init(getApplicationContext());
+
+                PDDocument doc = new PDDocument();
+                final float PAGE_W = PDRectangle.A4.getWidth();
+                final float PAGE_H = PDRectangle.A4.getHeight();
+                final float MARGIN  = 50f;
+                final float COL_W   = PAGE_W - MARGIN * 2;
+                final float LINE_H  = 14f;
+
+                // Fonts
+                PDType1Font fontBold    = PDType1Font.HELVETICA_BOLD;
+                PDType1Font fontRegular = PDType1Font.HELVETICA;
+
+                // Helper: current page state
+                final float[] yRef = {PAGE_H - MARGIN};
+                final PDPage[] pageRef = {null};
+                final PDPageContentStream[] csRef = {null};
+
+                // Open first page
+                pageRef[0] = new PDPage(PDRectangle.A4);
+                doc.addPage(pageRef[0]);
+                csRef[0] = new PDPageContentStream(doc, pageRef[0]);
+
+                // Utility lambdas replaced by a small helper class (Java 8 lambdas can't throw checked)
+                // We use a simple approach: write line, check y, add page if needed
+
+                // Title header
+                csRef[0].setFont(fontBold, 18);
+                csRef[0].beginText();
+                csRef[0].newLineAtOffset(MARGIN, yRef[0]);
+                csRef[0].showText("Cryptex Export");
+                csRef[0].endText();
+                yRef[0] -= 20f;
+
+                String dateStr = new SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault())
+                        .format(new Date());
+                csRef[0].setFont(fontRegular, 10);
+                csRef[0].beginText();
+                csRef[0].newLineAtOffset(MARGIN, yRef[0]);
+                csRef[0].showText("Generated: " + dateStr);
+                csRef[0].endText();
+                yRef[0] -= 8f;
+
+                // Divider line
+                csRef[0].moveTo(MARGIN, yRef[0]);
+                csRef[0].lineTo(MARGIN + COL_W, yRef[0]);
+                csRef[0].stroke();
+                yRef[0] -= 18f;
+
+                // Group entries by type — preserve picker order, include custom categories
+                java.util.List<String> typeOrder = new java.util.ArrayList<>();
+                for (Entry e : entries) {
+                    if (!typeOrder.contains(e.getType())) typeOrder.add(e.getType());
+                }
+
+                for (String type : typeOrder) {
+                    List<Entry> group = new java.util.ArrayList<>();
+                    for (Entry e : entries) if (type.equals(e.getType())) group.add(e);
+                    if (group.isEmpty()) continue;
+
+                    String[] labels = EntryType.getFieldLabels(type);
+                    String typeTitle = EntryType.getDisplayName(type)
+                            + "  (" + group.size() + ")";
+
+                    // Check page space for section header
+                    if (yRef[0] < MARGIN + 40f) {
+                        csRef[0].close();
+                        pageRef[0] = new PDPage(PDRectangle.A4);
+                        doc.addPage(pageRef[0]);
+                        csRef[0] = new PDPageContentStream(doc, pageRef[0]);
+                        yRef[0] = PAGE_H - MARGIN;
+                    }
+
+                    // Section header
+                    csRef[0].setFont(fontBold, 13);
+                    csRef[0].beginText();
+                    csRef[0].newLineAtOffset(MARGIN, yRef[0]);
+                    csRef[0].showText(typeTitle);
+                    csRef[0].endText();
+                    yRef[0] -= 6f;
+
+                    csRef[0].moveTo(MARGIN, yRef[0]);
+                    csRef[0].lineTo(MARGIN + COL_W, yRef[0]);
+                    csRef[0].stroke();
+                    yRef[0] -= 14f;
+
+                    for (Entry e : group) {
+                        // Entry title (field1)
+                        if (yRef[0] < MARGIN + 30f) {
+                            csRef[0].close();
+                            pageRef[0] = new PDPage(PDRectangle.A4);
+                            doc.addPage(pageRef[0]);
+                            csRef[0] = new PDPageContentStream(doc, pageRef[0]);
+                            yRef[0] = PAGE_H - MARGIN;
+                        }
+                        String entryTitle = e.getField1().isEmpty() ? "(no title)" : e.getField1();
+                        csRef[0].setFont(fontBold, 11);
+                        csRef[0].beginText();
+                        csRef[0].newLineAtOffset(MARGIN, yRef[0]);
+                        csRef[0].showText(entryTitle);
+                        csRef[0].endText();
+                        yRef[0] -= LINE_H;
+
+                        // Fields 2–7
+                        String[] fieldValues = {
+                                e.getField2(), e.getField3(), e.getField4(),
+                                e.getField5(), e.getField6(), e.getField7()
+                        };
+                        for (int fi = 0; fi < fieldValues.length; fi++) {
+                            String val = fieldValues[fi];
+                            String lbl = (fi + 1 < labels.length) ? labels[fi + 1] : "";
+                            if (val == null || val.isEmpty() || lbl.isEmpty()) continue;
+
+                            if (yRef[0] < MARGIN + 20f) {
+                                csRef[0].close();
+                                pageRef[0] = new PDPage(PDRectangle.A4);
+                                doc.addPage(pageRef[0]);
+                                csRef[0] = new PDPageContentStream(doc, pageRef[0]);
+                                yRef[0] = PAGE_H - MARGIN;
+                            }
+
+                            // Label
+                            csRef[0].setFont(fontBold, 9);
+                            csRef[0].beginText();
+                            csRef[0].newLineAtOffset(MARGIN + 10f, yRef[0]);
+                            csRef[0].showText(lbl + ":");
+                            csRef[0].endText();
+
+                            // Value — sanitise to printable ASCII (PDF Type1 safe)
+                            String safeVal = sanitiseForPdf(val);
+                            csRef[0].setFont(fontRegular, 9);
+                            csRef[0].beginText();
+                            csRef[0].newLineAtOffset(MARGIN + 100f, yRef[0]);
+                            csRef[0].showText(safeVal);
+                            csRef[0].endText();
+                            yRef[0] -= LINE_H;
+                        }
+                        yRef[0] -= 6f; // gap between entries
+                    }
+                    yRef[0] -= 10f; // gap between sections
+                }
+
+                csRef[0].close();
+
+                // Apply password protection (AES-128)
+                // First arg = owner password, second arg = user password (required to OPEN)
+                // Both set to user's chosen password so the PDF requires it to open.
+                AccessPermission ap = new AccessPermission();
+                ap.setCanPrint(true);
+                ap.setCanModify(false);
+                ap.setCanExtractContent(false);
+                StandardProtectionPolicy policy =
+                        new StandardProtectionPolicy(password, password, ap);
+                policy.setEncryptionKeyLength(128);
+                doc.protect(policy);
+
+                // Write to bytes
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                doc.save(baos);
+                doc.close();
+                byte[] pdfBytes = baos.toByteArray();
+                final byte[] finalPdfBytes = pdfBytes;
+
+                runOnUiThread(() -> {
+                    progress.dismiss();
+                    showPdfActionDialog(finalPdfBytes);
+                });
+
+            } catch (Exception ex) {
+                runOnUiThread(() -> {
+                    progress.dismiss();
+                    Toast.makeText(this,
+                            getString(R.string.pdf_fail) + "\n" + ex.getMessage(),
+                            Toast.LENGTH_LONG).show();
+                });
+            }
+        }).start();
+    }
+
+    /** Replace characters outside printable ASCII range with '?' for PDF Type1 safety. */
+    private String sanitiseForPdf(String input) {
+        if (input == null) return "";
+        StringBuilder sb = new StringBuilder(input.length());
+        for (char c : input.toCharArray()) {
+            sb.append((c >= 32 && c < 127) ? c : '?');
+        }
+        return sb.toString();
+    }
+
+    private void showPdfActionDialog(byte[] pdfBytes) {
+        // Go straight to share sheet — covers share, save to Drive/Files, print, email etc.
+        sharePdf(pdfBytes);
+    }
+
+    private void sharePdf(byte[] pdfBytes) {
+        try {
+            // Write to cache file, then share via FileProvider
+            java.io.File cacheDir = new java.io.File(getCacheDir(), "pdf_export");
+            cacheDir.mkdirs();
+            java.io.File pdfFile = new java.io.File(cacheDir, getString(R.string.pdf_filename));
+            try (java.io.FileOutputStream fos = new java.io.FileOutputStream(pdfFile)) {
+                fos.write(pdfBytes);
+            }
+            Uri pdfUri = androidx.core.content.FileProvider.getUriForFile(
+                    this, getPackageName() + ".fileprovider", pdfFile);
+            Intent shareIntent = new Intent(Intent.ACTION_SEND);
+            shareIntent.setType("application/pdf");
+            shareIntent.putExtra(Intent.EXTRA_STREAM, pdfUri);
+            shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(shareIntent, getString(R.string.pdf_share)));
+            if (isPdfOnlyMode) finish();
+        } catch (Exception ex) {
+            Toast.makeText(this,
+                    getString(R.string.pdf_fail) + "\n" + ex.getMessage(),
+                    Toast.LENGTH_LONG).show();
+        }
     }
 
 }

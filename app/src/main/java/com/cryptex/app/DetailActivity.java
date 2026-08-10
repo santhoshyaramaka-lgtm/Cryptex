@@ -1771,27 +1771,6 @@ public class DetailActivity extends BaseActivity {
             return;
         }
 
-        // Expiry validation — CARD type only
-        if (EntryType.CARD.equals(entryType) && editViews[3] != null) {
-            String expiry = editViews[3].getText().toString().trim();
-            if (!expiry.isEmpty()) {
-                boolean valid = false;
-                if (expiry.matches("^(0[1-9]|1[0-2])/[0-9]{2}$")) {
-                    int month = Integer.parseInt(expiry.substring(0, 2));
-                    int year  = 2000 + Integer.parseInt(expiry.substring(3));
-                    java.util.Calendar now = java.util.Calendar.getInstance();
-                    int curYear  = now.get(java.util.Calendar.YEAR);
-                    int curMonth = now.get(java.util.Calendar.MONTH) + 1;
-                    valid = (year > curYear) || (year == curYear && month >= curMonth);
-                }
-                if (!valid) {
-                    editViews[3].setError("Invalid or expired date");
-                    editViews[3].requestFocus();
-                    return;
-                }
-            }
-        }
-
         if (existingEntry != null) {
             existingEntry.setType(entryType);
             for (int i = 0; i < 7; i++) {
