@@ -235,7 +235,7 @@ public class EntryAdapter extends RecyclerView.Adapter<EntryAdapter.ViewHolder> 
     // ── ViewHolder ────────────────────────────────────────────────────────────
 
     static class ViewHolder extends RecyclerView.ViewHolder {
-        CardView  card;
+        View      card;
         TextView  tvTitle, tvSubtitle, tvIcon, tvTimestamp, tvArchivedBadge;
         ImageView ivStar, ivCheck, ivChevron;
 
